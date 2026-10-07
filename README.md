@@ -33,12 +33,10 @@ The v4 schema is introspectable, so you can browse it at `https://api.7tv.app/v4
 
 7TV's OAuth `redirect_uri` is fixed to `https://7tv.app/login/callback`, and an absolute `return_to` is refused (`return_to origin mismatch`). The PKCE verifier is also an `HttpOnly; SameSite=Strict` cookie on `api.7tv.app`. Because of all this, a third-party site can't finish the login itself. The app asks for your existing 7tv.app session token instead: in the DevTools console on 7tv.app, run `copy(localStorage.getItem("7tv-token"))` and paste the result. The token is kept in this app's `localStorage` and is only ever sent to `api.7tv.app`.
 
-## Develop / deploy
+## Develop
 
 ```bash
 pnpm install
 pnpm dev        # http://localhost:3000
 pnpm build      # static export in ./out
 ```
-
-You can deploy `out/` to any static host. For Cloudflare Pages, set the build command to `pnpm build` and the output directory to `out`. If the app is hosted under a sub-path (for example a GitHub Pages project site), set `BASE_PATH=/repo-name` when you build.
