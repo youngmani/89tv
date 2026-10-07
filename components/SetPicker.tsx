@@ -19,6 +19,7 @@ export function setLabel(s: EmoteSetInfo) {
  */
 export function SetPicker({
   label,
+  description,
   sets,
   value,
   onChange,
@@ -26,6 +27,7 @@ export function SetPicker({
   disabledId,
 }: {
   label: string;
+  description?: string;
   sets: EmoteSetInfo[];
   value: string | null;
   onChange: (id: string | null) => void;
@@ -40,14 +42,15 @@ export function SetPicker({
   const custom = !!allowCustom && (customChosen || (!!value && sets.length > 0 && !inList));
 
   const items = sets.map((s) => ({ id: s.id, label: setLabel(s), isDisabled: s.id === disabledId }));
-  if (allowCustom) items.push({ id: CUSTOM, label: "Another set (paste a link or ID)…", isDisabled: false });
+  if (allowCustom) items.push({ id: CUSTOM, label: "Any other set (paste a link)…", isDisabled: false });
 
   return (
     <div className="field-group">
       <SelectField
         label={label}
+        description={description}
         items={items}
-        placeholder="Select a set…"
+        placeholder="Choose a set…"
         value={custom ? CUSTOM : inList ? value : null}
         onChange={(id) => {
           if (id === CUSTOM) {
@@ -68,7 +71,7 @@ export function SetPicker({
             onChange(parseSetId(v));
           }}
         >
-          <Label className="visually-hidden">Set link or ID</Label>
+          <Label className="visually-hidden">Emote set link or ID</Label>
           <Input placeholder="https://7tv.app/emote-sets/01H…" />
         </TextField>
       )}

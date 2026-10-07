@@ -12,26 +12,36 @@ interface Row {
 
 /** What the chip should show the emote turning into, if anything changes. */
 function target(row: SetEmote, c: Choice | undefined, current: SetEmote | undefined): EmoteSummary | "exclude" | null {
-  if (c?.kind === "exclude") return "exclude";
+  if (c?.kind === "exclude" || c?.kind === "remove") return "exclude";
   const want = c?.kind === "replace" ? c.emote : c?.kind === "original" ? row.emote : null;
   if (!want) return null;
   if (current) return want.id === current.emote.id ? null : want;
   return want.id === row.emote.id ? null : want;
 }
 
-function describe(row: SetEmote, c: Choice | undefined, a: ApplyState | undefined, current: SetEmote | undefined) {
+function describe(
+  row: SetEmote,
+  c: Choice | undefined,
+  a: ApplyState | undefined,
+  current: SetEmote | undefined,
+  extra: boolean,
+) {
   const t = target(row, c, current);
-  const what = current
+  const what = extra
+    ? c?.kind === "remove"
+      ? "only in the seasonal set, removing"
+      : "only in the seasonal set, keeping"
+    : current
     ? t && t !== "exclude"
       ? `swap ${current.emote.defaultName} by ${ownerName(current.emote)} for ${t.defaultName} by ${ownerName(t)}`
-      : `in target as ${current.emote.defaultName}`
+      : `already in the seasonal set as ${current.emote.defaultName}`
     : !c
-      ? "not reviewed"
+      ? "unreviewed"
       : t === "exclude"
-        ? "not copied"
+        ? "skipped"
         : t
-          ? `seasonal: ${t.defaultName}`
-          : "kept original";
+          ? `seasonal pick: ${t.defaultName}`
+          : "copied as-is";
   const status = a?.state === "error" ? `failed: ${a.message}` : a?.state;
   return [what, status].filter(Boolean).join(", ");
 }
@@ -45,7 +55,8 @@ function MappingOverviewImpl({
   applyStates,
   onJump,
 }: {
-  sections: { title: string; rows: Row[] }[];
+  /** `extra` marks the section of target-only emotes (keep or remove). */
+  sections: { title: string; rows: Row[]; extra?: boolean }[];
   current: number;
   choices: Record<string, Choice>;
   targetEntries: Record<string, SetEmote>;
@@ -68,17 +79,28 @@ function MappingOverviewImpl({
                   const cur = targetEntries[row.alias];
                   const t = target(row, c, cur);
                   const changes = !!t && t !== "exclude";
+                  const extra = !!section.extra;
                   return (
                     <Button
                       key={row.alias}
                       className={[
                         "chip",
                         index === current ? "current" : "",
-                        cur ? (changes ? "replace" : "mapped") : c && c.kind !== "keep" ? c.kind : "undecided",
+                        extra
+                          ? c?.kind === "remove"
+                            ? "exclude"
+                            : "mapped"
+                          : cur
+                            ? changes
+                              ? "replace"
+                              : "mapped"
+                            : c && c.kind !== "keep"
+                              ? c.kind
+                              : "undecided",
                         a ? `apply-${a.state}` : "",
                       ].join(" ")}
                       onPress={() => onJump(index)}
-                      aria-label={`${row.alias}: ${describe(row, c, a, cur)}`}
+                      aria-label={`${row.alias}: ${describe(row, c, a, cur, extra)}`}
                       aria-current={index === current ? "step" : undefined}
                     >
                       <img src={emoteImage((cur?.emote ?? row.emote).id, 1)} alt="" loading="lazy" />

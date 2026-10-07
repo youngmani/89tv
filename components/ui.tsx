@@ -1,7 +1,18 @@
 "use client";
 
 import type { Key } from "react-aria-components";
-import { Button, FieldError, Label, ListBox, ListBoxItem, Popover, Select, SelectValue, Text } from "react-aria-components";
+import {
+  Button,
+  FieldError,
+  Label,
+  ListBox,
+  ListBoxItem,
+  Popover,
+  ProgressBar,
+  Select,
+  SelectValue,
+  Text,
+} from "react-aria-components";
 
 export interface SelectItem {
   id: string;
@@ -61,5 +72,24 @@ export function SelectField({
         </ListBox>
       </Popover>
     </Select>
+  );
+}
+
+/** Indeterminate spinner (react-aria ProgressBar), announced to screen readers via `label`. */
+export function Spinner({ label, size = "md", className }: { label: string; size?: "sm" | "md"; className?: string }) {
+  return (
+    <ProgressBar className={`spinner-wrap ${className ?? ""}`} isIndeterminate aria-label={label}>
+      <span className={`spinner-ring${size === "sm" ? " sm" : ""}`} aria-hidden />
+    </ProgressBar>
+  );
+}
+
+/** Full-width "please wait" card for states where there's nothing the user can do yet. */
+export function LoadingCard({ message }: { message: string }) {
+  return (
+    <section className="card narrow center loading-card">
+      <Spinner label={message} />
+      <p className="muted">{message}</p>
+    </section>
   );
 }

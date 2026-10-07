@@ -2,14 +2,16 @@ import type { EmoteSummary, SearchResult, SortBy } from "./seventv";
 import { load, save } from "./storage";
 
 /**
- * What to put in the target set for one source emote. "keep" only applies to emotes already in the target
- * (leave them as they are); "exclude" only to emotes not yet there (don't copy).
+ * What to do with one emote name. "keep" applies to names already in the target (leave them as they are);
+ * "exclude" to source emotes not yet there (don't copy); "remove" to target emotes that aren't in the
+ * source (delete them from the target).
  */
 export type Choice =
   | { kind: "original" }
   | { kind: "replace"; emote: EmoteSummary }
   | { kind: "exclude" }
-  | { kind: "keep" };
+  | { kind: "keep" }
+  | { kind: "remove" };
 
 /** Options for one emote search; each emote can tweak these independently. */
 export interface SearchOptions {
@@ -30,14 +32,18 @@ export interface SearchState extends SearchOptions {
 }
 
 export const SORT_OPTIONS: { id: SortBy; label: string }[] = [
-  { id: "TOP_ALL_TIME", label: "Most used (all time)" },
-  { id: "TOP_MONTHLY", label: "Most used (this month)" },
-  { id: "TRENDING_MONTHLY", label: "Trending (month)" },
-  { id: "TRENDING_WEEKLY", label: "Trending (week)" },
-  { id: "UPLOAD_DATE", label: "Newest" },
+  // Same terms as 7tv.app's emote browser (Top / Trending / New).
+  { id: "TOP_ALL_TIME", label: "Top" },
+  { id: "TOP_MONTHLY", label: "Top this month" },
+  { id: "TRENDING_MONTHLY", label: "Trending this month" },
+  { id: "TRENDING_WEEKLY", label: "Trending this week" },
+  { id: "UPLOAD_DATE", label: "New" },
 ];
 
-export type ApplyState = { state: "queued" | "running" | "added" | "updated" | "error"; message?: string };
+export type ApplyState = {
+  state: "queued" | "running" | "added" | "updated" | "removed" | "error";
+  message?: string;
+};
 
 export const ORIGINAL: Choice = { kind: "original" };
 export const KEEP: Choice = { kind: "keep" };
@@ -47,8 +53,8 @@ export const KEEP: Choice = { kind: "keep" };
 // `palette` selects the site-wide colour scheme (see [data-theme] in globals.css).
 export const THEMES = {
   halloween: { label: "🎃 Halloween", tags: ["halloween"], palette: "halloween" },
-  christmas: { label: "🎄 Christmas / winter", tags: ["christmas", "xmas"], palette: "winter" },
-  custom: { label: "Custom tags", tags: [] as string[], palette: "neutral" },
+  christmas: { label: "🎄 Christmas", tags: ["christmas", "xmas"], palette: "winter" },
+  custom: { label: "✨ Something else", tags: [] as string[], palette: "neutral" },
 } as const;
 export type Theme = keyof typeof THEMES;
 

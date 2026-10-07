@@ -285,15 +285,15 @@ export const isEmoteLevelError = (e: unknown) =>
 export function friendlyError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e);
   const code = e instanceof ApiError ? e.code : undefined;
-  if (isCapacityError(e)) return "The target set is full.";
-  if (isConflictError(e)) return "The target set already has an emote with this name.";
-  if (/emote is private/i.test(msg)) return "This emote is private, so it can't be added. Pick another one.";
-  if (/emote not found/i.test(msg)) return "This emote no longer exists on 7TV. Pick another one.";
-  if (/emote set not found/i.test(msg)) return "The target set no longer exists.";
-  if (code === "UNAUTHORIZED" || code === "LOGIN_REQUIRED") return "Your 7TV session expired. Sign in again to continue.";
+  if (isCapacityError(e)) return "Your seasonal set is full.";
+  if (isConflictError(e)) return "Your seasonal set already has an emote with this name.";
+  if (/emote is private/i.test(msg)) return "This emote is private, so it can't be added. Pick a different one.";
+  if (/emote not found/i.test(msg)) return "This emote has been deleted from 7TV. Pick a different one.";
+  if (/emote set not found/i.test(msg)) return "Your seasonal set no longer exists.";
+  if (code === "UNAUTHORIZED" || code === "LOGIN_REQUIRED") return "Your 7TV session expired. Grab a fresh token to keep going.";
   if (code === "LACKING_PRIVILEGES" || (e instanceof ApiError && e.status === 403))
-    return "You don't have permission to edit the target set anymore.";
-  if (code === "RATE_LIMIT_EXCEEDED") return "7TV is rate limiting requests. Wait a bit and try again.";
+    return "You can't edit your seasonal set anymore.";
+  if (code === "RATE_LIMIT_EXCEEDED") return "7TV asked us to slow down. Wait a moment and try again.";
   if (e instanceof TypeError) return "Couldn't reach 7TV. Check your connection and try again.";
   return msg.replace(/^[A-Z_]+ /, ""); // strip the "CODE " prefix 7TV puts on messages
 }

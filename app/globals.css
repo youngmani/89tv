@@ -358,3 +358,27 @@ img { color: transparent; }
 .summary-emoji { font-size: 64px; line-height: 96px; height: 96px; }
 .summary-counts { margin: 0; text-align: center; }
 .summary-counts b { color: var(--accent); }
+
+/* Controls that can't be used on this step: hidden, but still holding their space so nothing shifts. */
+.invisible { visibility: hidden; }
+
+/* ---------- Target-only emotes ---------- */
+.alias.struck { text-decoration: line-through; color: var(--muted); }
+.btn.choice { min-width: 160px; }
+.btn.choice[data-selected] { border-color: var(--accent); background: var(--accent-soft); }
+.btn.choice.danger[data-selected] { border-color: var(--err); color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+.chip.apply-removed { box-shadow: inset 3px 0 0 var(--err); }
+
+/* ---------- Loading states ---------- */
+.spinner-wrap { display: inline-grid; place-items: center; }
+.spinner-ring.sm { width: 14px; height: 14px; border-width: 2px; }
+.loading-card { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 32px 20px; }
+.loading-card p { margin: 0; }
+.btn .spinner-ring.sm { border-color: color-mix(in srgb, currentColor 30%, transparent); border-top-color: currentColor; }
+
+/* Logo emoji follows the palette set on <html> before first paint (no flash before hydration). */
+.logo > span { display: none; }
+:root:not([data-theme]) .logo-halloween,
+[data-theme="halloween"] .logo-halloween,
+[data-theme="winter"] .logo-winter,
+[data-theme="neutral"] .logo-neutral { display: inline; }

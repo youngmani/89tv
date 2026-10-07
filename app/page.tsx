@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Input, Label, ProgressBar, TextField } from "react-aria-components";
 import { useDialog } from "@/components/Dialog";
+import { ExtraFocus } from "@/components/ExtraFocus";
 import { MappingFocus } from "@/components/MappingFocus";
 import { MappingOverview } from "@/components/MappingOverview";
 import { MappingSummary } from "@/components/MappingSummary";
 import { SetPicker } from "@/components/SetPicker";
 import { TokenGate, cleanToken } from "@/components/TokenGate";
-import { SelectField } from "@/components/ui";
+import { LoadingCard, SelectField, Spinner } from "@/components/ui";
 import {
   type ApplyState,
   type Choice,
@@ -50,10 +51,11 @@ import {
   searchEmotes,
   usedSlots,
 } from "@/lib/seventv";
+import { type Step, buildSteps, stepAlias, stepRow } from "@/lib/steps";
 import { load, save } from "@/lib/storage";
 
 const TOKEN_KEY = "89tv:token";
-type Filter = "all" | "undecided" | "replace" | "original" | "exclude" | "changed" | "errors";
+type Filter = "all" | "undecided" | "replace" | "original" | "exclude" | "changed" | "remove" | "errors";
 
 
 // Searches are the scarce resource (7TV allows ~100 per window), so we only search the emote on screen
@@ -81,8 +83,12 @@ interface Session {
   pending: SetEmote[];
   /** Source emotes whose name is already in the target, sorted by alias. Shown last; can be swapped. */
   mapped: SetEmote[];
-  /** pending followed by mapped. The user steps through pending, an "All done!" step, then mapped. */
+  /** Target emotes whose name isn't in the source, sorted by alias. Kept unless the user removes them. */
+  extras: SetEmote[];
+  /** pending followed by mapped. */
   rows: SetEmote[];
+  /** Everything the user steps through, in order (see lib/steps.ts). */
+  steps: Step[];
   /** Target slots in use when loaded (deleted emotes don't count, matching 7TV). */
   targetUsed: number;
   tags: string[];
@@ -102,6 +108,10 @@ export default function Home() {
   const [me, setMe] = useState<Me | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [sets, setSets] = useState<EmoteSetInfo[]>([]);
+  /** The account check and the editable-set list load as one blocking phase (nothing to do until both land). */
+  const [account, setAccount] = useState<"idle" | "checking" | "loading-sets" | "ready" | "error">("idle");
+  /** Bumped by "Retry" to re-run the account check after a network failure. */
+  const [accountAttempt, setAccountAttempt] = useState(0);
 
   // Setup form. Defaults are inferred, never persisted; only an in-progress mapping is saved.
   const [sourceId, setSourceId] = useState<string | null>(null);
@@ -114,8 +124,15 @@ export default function Home() {
   const [resume, setResume] = useState<MappingRecord | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(false);
+  /** Re-reading the target before the confirm dialog; the apply buttons show a spinner meanwhile. */
+  const [preparing, setPreparing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [completed, setCompleted] = useState<{ added: number; swapped: number; target: string } | null>(null);
+  const [completed, setCompleted] = useState<{
+    added: number;
+    swapped: number;
+    removed: number;
+    target: string;
+  } | null>(null);
 
   /** Decisions the user has made; emotes without one are copied as the original. */
   const [choices, setChoices] = useState<Record<string, Choice>>({});
@@ -206,6 +223,7 @@ export default function Home() {
       setToken(null);
       setMe(null);
       setSets([]);
+      setAccount("idle");
       resetSession();
       setAuthError(reason ?? null);
     },
@@ -216,24 +234,30 @@ export default function Home() {
     if (!token) return;
     let cancelled = false;
     (async () => {
+      setAuthError(null);
+      setAccount("checking");
       try {
         const user = await fetchMe(token);
         if (cancelled) return;
-        if (!user) return signOut("That token isn't valid (7TV didn't recognise the session).");
+        if (!user) return signOut("7TV didn't accept that token. Copy it again and paste the whole thing.");
         save(TOKEN_KEY, token);
         setMe(user);
-        setAuthError(null);
-        setSets(await fetchSetInfos(user.editableEmoteSetIds, token));
+        setAccount("loading-sets");
+        const editable = await fetchSetInfos(user.editableEmoteSetIds, token);
+        if (cancelled) return;
+        setSets(editable);
+        setAccount("ready");
       } catch (e) {
         if (cancelled) return;
-        if (e instanceof ApiError && e.status === 401) signOut("Your 7TV session has expired. Please sign in again.");
-        else setAuthError(friendlyError(e));
+        if (e instanceof ApiError && e.status === 401) return signOut("Your 7TV session has expired. Grab a fresh token to keep going.");
+        setAuthError(friendlyError(e));
+        setAccount("error");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [token, signOut]);
+  }, [token, signOut, accountAttempt]);
 
   const tags = useMemo(() => tagsFor(theme, customTags), [theme, customTags]);
 
@@ -251,41 +275,49 @@ export default function Home() {
           fetchSetEmotes(params.sourceId, token),
           fetchSetEmotes(params.targetId, token),
         ]);
-        if (!source) throw new Error("The source set no longer exists.");
-        if (!target) throw new Error("The target set no longer exists.");
-        if (!me.editableEmoteSetIds.includes(target.id)) throw new Error("You don't have edit access to the target set.");
+        if (!source) throw new Error("Your base set no longer exists.");
+        if (!target) throw new Error("Your seasonal set no longer exists.");
+        if (!me.editableEmoteSetIds.includes(target.id)) throw new Error("You can't edit that seasonal set.");
         // An emote counts as already mapped when the target has something under the same name (alias).
         const byAlias = (a: SetEmote, b: SetEmote) => a.alias.localeCompare(b.alias, undefined, { sensitivity: "base" });
         const entries = new Map(targetEmotes.map((e) => [e.alias, e]));
         const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).sort(byAlias);
         const mappedRows = sourceEmotes.filter((e) => entries.has(e.alias)).sort(byAlias);
+        // Target emotes the source doesn't have (e.g. the source changed since last season).
+        const sourceAliases = new Set(sourceEmotes.map((e) => e.alias));
+        const extraRows = targetEmotes.filter((e) => !sourceAliases.has(e.alias)).sort(byAlias);
+        const steps = buildSteps(pendingRows, mappedRows, extraRows);
         const s: Session = {
           params,
           source,
           target,
           pending: pendingRows,
           mapped: mappedRows,
+          extras: extraRows,
           rows: [...pendingRows, ...mappedRows],
+          steps,
           targetUsed: usedSlots(targetEmotes),
           tags: tagsFor(params.theme, params.customTags),
         };
         const restored = saved?.choices ?? {};
-        // Steps: pending emotes, the summary, mapped emotes, then (if any were mapped) an end step.
-        const P = pendingRows.length;
-        const M = mappedRows.length;
-        const rowAt = saved?.currentAlias ? s.rows.findIndex((r) => r.alias === saved.currentAlias) : -1;
+        // Resume where the user was. Names are looked up rather than positions, because emotes move between
+        // sections as they get added (e.g. a pending emote added before the reload is now "mapped").
+        const summaryAt = steps.findIndex((st) => st.kind === "summary");
+        const endAt = steps.findIndex((st) => st.kind === "end");
+        const aliasAt = saved?.currentAlias ? steps.findIndex((st) => stepAlias(st) === saved.currentAlias) : -1;
         const firstUndecided = s.pending.findIndex((r) => !restored[r.alias]);
-        const step = saved?.atStep === "end" && M > 0
-          ? P + 1 + M
-          : saved?.atStep
-            ? P
-            : rowAt >= 0
-            ? rowAt < P
-              ? rowAt
-              : rowAt + 1
-            : firstUndecided >= 0
-              ? firstUndecided
-              : P;
+        const step =
+          saved?.atStep === "end"
+            ? endAt >= 0
+              ? endAt
+              : summaryAt
+            : saved?.atStep === "summary"
+              ? summaryAt
+              : aliasAt >= 0
+                ? aliasAt
+                : firstUndecided >= 0
+                  ? firstUndecided
+                  : summaryAt;
         // Swap journal: an entry whose name is back in the target finished (or rolled back) before the page
         // closed. One whose name is still missing was interrupted between remove and re-add; keep it so the
         // user can restore the previous emote.
@@ -316,23 +348,22 @@ export default function Home() {
 
   const pending = useMemo(() => session?.pending ?? [], [session]);
   const rows = useMemo(() => session?.rows ?? [], [session]);
-  // Steps: [pending emotes…, "All done!" summary, already-mapped emotes…, "All done!" end].
-  // The end step only exists when there are already-mapped emotes; otherwise the summary is the end.
-  const summaryStep = pending.length;
-  const mappedCount = session?.mapped.length ?? 0;
-  const endStep = mappedCount > 0 ? summaryStep + 1 + mappedCount : summaryStep;
-  const stepCount = endStep + 1;
-  /** Step index for rows[i]: mapped rows sit one past the summary step. */
-  const stepOfRow = useCallback((i: number) => (i < summaryStep ? i : i + 1), [summaryStep]);
-  const rowAtStep = useCallback(
-    (step: number): SetEmote | undefined =>
-      step < summaryStep ? rows[step] : step > summaryStep && step < endStep ? rows[step - 1] : undefined,
-    [rows, summaryStep, endStep],
-  );
-  const atSummary = !!session && index === summaryStep;
-  const atEnd = !!session && !atSummary && index === endStep;
-  const current = atSummary || atEnd ? undefined : rowAtStep(index);
+  const extras = useMemo(() => session?.extras ?? [], [session]);
+  const steps = useMemo(() => session?.steps ?? [], [session]);
+  const stepCount = steps.length;
+  const step = steps[index] as Step | undefined;
+  const summaryStep = steps.findIndex((st) => st.kind === "summary");
+  const stepOfAlias = useCallback((alias: string) => steps.findIndex((st) => stepAlias(st) === alias), [steps]);
+  const rowAtStep = useCallback((i: number) => stepRow(steps[i]), [steps]);
+  const atSummary = step?.kind === "summary";
+  const atEnd = step?.kind === "end";
+  /** The source emote on screen (sections 1 and 2). */
+  const current = stepRow(step);
+  /** The target-only emote on screen (section 3). */
+  const currentExtra = step?.kind === "extra" ? step.entry : undefined;
   const isMapped = (alias: string) => alias in targetEntries;
+  const extraAliases = useMemo(() => new Set(extras.map((e) => e.alias)), [extras]);
+  const isExtra = (alias: string) => extraAliases.has(alias);
 
   // Persist the in-progress mapping on every change.
   const persist = useCallback(
@@ -340,11 +371,11 @@ export default function Home() {
       saveMapping({
         ...s.params,
         choices,
-        currentAlias: current?.alias ?? null,
+        currentAlias: stepAlias(step),
         atStep: atSummary ? "summary" : atEnd ? "end" : undefined,
         removed: removedRef.current,
       }),
-    [choices, current, atSummary, atEnd],
+    [choices, step, atSummary, atEnd],
   );
   useEffect(() => {
     if (session) persist(session);
@@ -352,9 +383,9 @@ export default function Home() {
 
   const cancelMapping = async () => {
     const ok = await ask({
-      title: "Cancel this mapping?",
-      body: "Your choices will be discarded. Changes already made to the target set stay there.",
-      confirmLabel: "Cancel mapping",
+      title: "Start over?",
+      body: "Your picks will be thrown away. Anything already saved to your seasonal set stays there.",
+      confirmLabel: "Start over",
       destructive: true,
     });
     if (!ok) return;
@@ -472,11 +503,12 @@ export default function Home() {
 
   const choose = useCallback(
     (choice: Choice, advance: boolean) => {
-      if (!current) return;
-      setChoices((prev) => ({ ...prev, [current.alias]: choice }));
+      const alias = stepAlias(step);
+      if (!alias) return;
+      setChoices((prev) => ({ ...prev, [alias]: choice }));
       if (advance) navigate(1);
     },
-    [current, navigate],
+    [step, navigate],
   );
 
   const jumpToNextUndecided = () => {
@@ -485,10 +517,19 @@ export default function Home() {
     const k = i >= 0 ? i : pending.findIndex(open);
     setIndex(k >= 0 ? k : summaryStep);
   };
+  /** Jump to the first step of a section (from the "All done!" buttons). */
+  const jumpTo = (kind: "mapped" | "extra") => {
+    const i = steps.findIndex((st) => st.kind === kind);
+    if (i >= 0) setIndex(i);
+  };
 
   // ---- Applying ----
-  /** Emotes not yet in the target default to the original; ones already there default to staying as-is. */
-  const choiceOf = (alias: string): Choice => choices[alias] ?? (isMapped(alias) ? KEEP : ORIGINAL);
+  /**
+   * Emotes not yet in the target default to the original; anything already in the target (mapped, or only in
+   * the target) defaults to staying as-is.
+   */
+  const choiceOf = (alias: string): Choice =>
+    choices[alias] ?? (isMapped(alias) || isExtra(alias) ? KEEP : ORIGINAL);
   /** The emote this row should end up as in the target (null = not copied). */
   const desiredEmote = (row: SetEmote): EmoteSummary | null => {
     const c = choiceOf(row.alias);
@@ -506,23 +547,28 @@ export default function Home() {
 
   const plan = pending.filter((r) => choiceOf(r.alias).kind !== "exclude" && applyStates[r.alias]?.state !== "added");
   const swaps = session?.mapped.filter(isSwap) ?? [];
+  const removals = extras.filter((e) => choiceOf(e.alias).kind === "remove" && applyStates[e.alias]?.state !== "removed");
   const addedCount = pending.filter((r) => applyStates[r.alias]?.state === "added").length;
   const capacity = session?.target.capacity ?? null;
   // Swapping out an entry whose emote was deleted from 7TV takes a slot (deleted emotes don't count).
   const swapSlots = swaps.filter((r) => targetEntries[r.alias]?.emote.deleted).length;
-  const projected = (session?.targetUsed ?? 0) + addedCount + plan.length + swapSlots;
+  const removedCount = extras.filter((e) => applyStates[e.alias]?.state === "removed" && !e.emote.deleted).length;
+  // Removing frees a slot unless the emote was deleted from 7TV (those never counted).
+  const freedSlots = removals.filter((e) => !e.emote.deleted).length;
+  const projected = (session?.targetUsed ?? 0) + addedCount + plan.length + swapSlots - removedCount - freedSlots;
 
   const stats = useMemo(() => {
-    const counts = { replace: 0, original: 0, exclude: 0, undecided: 0, errors: 0 };
+    const counts = { replace: 0, original: 0, exclude: 0, undecided: 0, remove: 0, errors: 0 };
     for (const r of pending) {
       const c = choices[r.alias];
       const done = applyStates[r.alias]?.state === "added";
-      if (c && c.kind !== "keep") counts[c.kind]++;
+      if (c && (c.kind === "replace" || c.kind === "original" || c.kind === "exclude")) counts[c.kind]++;
       else if (!done) counts.undecided++; // already-added emotes don't need reviewing
     }
-    for (const r of rows) if (applyStates[r.alias]?.state === "error") counts.errors++;
+    for (const e of extras) if (choices[e.alias]?.kind === "remove") counts.remove++;
+    for (const r of [...rows, ...extras]) if (applyStates[r.alias]?.state === "error") counts.errors++;
     return counts;
-  }, [pending, rows, choices, applyStates]);
+  }, [pending, rows, extras, choices, applyStates]);
 
   // Closing the tab mid-run is recoverable (see the swap journal and the re-read in apply), but warn anyway.
   useEffect(() => {
@@ -543,21 +589,24 @@ export default function Home() {
 
   const apply = async () => {
     const s = sessionRef.current;
-    if (!s || !token) return;
+    if (!s || !token || preparing || applying) return; // ignore repeat presses
 
     // Re-read the target right before writing: earlier (partial) runs, or edits made elsewhere, may have
     // already added some of these emotes, and only the emotes still missing need free slots.
     let fresh: SetEmote[];
     let freshCapacity: number | null;
+    setPreparing(true);
     try {
       const [info, emotes] = await Promise.all([fetchSetInfo(s.target.id, token), fetchSetEmotes(s.target.id, token)]);
-      if (!info) throw new Error("The target set no longer exists.");
+      if (!info) throw new Error("Your seasonal set no longer exists.");
       fresh = emotes;
       freshCapacity = info.capacity;
     } catch (e) {
-      await ask({ title: "Couldn't read the target set", body: friendlyError(e) });
+      setPreparing(false);
+      await ask({ title: `Couldn't check ${s.target.name}`, body: friendlyError(e) });
       return;
     }
+    setPreparing(false);
     const freshByAlias = new Map(fresh.map((e) => [e.alias, e]));
     const toAdd = s.pending.filter((r) => choiceOf(r.alias).kind !== "exclude" && !freshByAlias.has(r.alias));
     const alreadyThere = s.pending.filter((r) => freshByAlias.has(r.alias));
@@ -570,44 +619,55 @@ export default function Home() {
       if (now && now.emote.id === targetEntries[r.alias]?.emote.id) toSwap.push(r);
       else stale.push(r);
     }
+    // Removals: only if the target still holds exactly the emote the user saw under that name.
+    const toRemove: SetEmote[] = [];
+    const goneAlready: SetEmote[] = [];
+    for (const e of s.extras.filter((x) => choiceOf(x.alias).kind === "remove")) {
+      const now = freshByAlias.get(e.alias);
+      if (!now) goneAlready.push(e);
+      else if (now.emote.id === e.emote.id) toRemove.push(e);
+      else stale.push(e);
+    }
     setApplyStates((prev) => {
       const next = { ...prev };
       for (const r of alreadyThere) next[r.alias] = { state: "added" };
+      for (const e of goneAlready) next[e.alias] = { state: "removed" };
       for (const r of stale)
         next[r.alias] = {
           state: "error",
-          message: "This emote changed on 7TV since the mapping was loaded, so it was left alone. Reload to see it.",
+          message: "Someone changed this one on 7TV after you loaded it, so it was left alone. Reload to see what's there now.",
         };
       return next;
     });
 
-    if (!toAdd.length && !toSwap.length) {
+    if (!toAdd.length && !toSwap.length && !toRemove.length) {
       if (stale.length) {
         await ask({
-          title: "Nothing was changed",
-          body: `${plural(stale.length, "emote")} you changed were edited on 7TV in the meantime and were left alone.`,
+          title: "Nothing was saved",
+          body: `${plural(stale.length, "emote")} you changed were edited on 7TV in the meantime, so they were left alone. Reload to see the latest.`,
         });
         return;
       }
-      return finish(s, 0, 0);
+      return finish(s, 0, 0, 0);
     }
 
     const used = usedSlots(fresh);
     const slotsNeeded = toAdd.length + toSwap.filter((r) => targetEntries[r.alias]?.emote.deleted).length;
-    const free = freshCapacity == null ? Infinity : Math.max(0, freshCapacity - used);
+    // Removals run first, so the slots they free count towards the space available.
+    const freed = toRemove.filter((e) => !e.emote.deleted).length;
+    const free = freshCapacity == null ? Infinity : Math.max(0, freshCapacity - used + freed);
     if (slotsNeeded > free) {
       await ask({
-        title: "Not enough space in the target set",
+        title: `${s.target.name} is too full`,
         body: (
           <>
             <p>
-              <b>{s.target.name}</b> has {plural(free, "free slot")} ({used}/{freshCapacity} used), but{" "}
-              {plural(slotsNeeded, "emote")} still need a slot
-              {alreadyThere.length ? ` (${alreadyThere.length} are already there and don't need space)` : ""}.
+              It has {plural(free, "free slot")} ({used} of {freshCapacity} used), but {plural(slotsNeeded, "emote")}{" "}
+              still need one
+              {freed ? `, even counting the ${plural(freed, "emote")} you're removing` : ""}.
             </p>
             <p>
-              Mark at least {slotsNeeded - free} more as <i>don&apos;t copy</i>, or raise the set&apos;s capacity on
-              7tv.app.
+              Skip at least {slotsNeeded - free} more, or raise the set&apos;s capacity on 7tv.app.
             </p>
           </>
         ),
@@ -618,30 +678,40 @@ export default function Home() {
     const replaced = toAdd.filter((r) => choiceOf(r.alias).kind === "replace").length;
     const undecided = toAdd.filter((r) => !choices[r.alias]).length;
     const ok = await ask({
-      title: `Update ${s.target.name}?`,
+      title: `Save to ${s.target.name}?`,
       body: (
         <ul>
           {toAdd.length > 0 && (
             <li>
-              Add {plural(toAdd.length, "emote")}: {plural(replaced, "seasonal replacement")},{" "}
-              {plural(toAdd.length - replaced, "original")}
-              {undecided ? ` (${undecided} not reviewed yet)` : ""}
+              Add {plural(toAdd.length, "emote")}: {replaced} seasonal, {toAdd.length - replaced} copied from the base set
+              {undecided ? ` (${undecided} unreviewed)` : ""}
             </li>
           )}
           {toSwap.length > 0 && (
             <li>
-              Swap {plural(toSwap.length, "emote")} already in the set: each current emote is removed and the new one
-              added under the same name. If adding fails, the previous emote is put back.
+              Swap {plural(toSwap.length, "emote")}: the current one comes out and your pick goes in under the same name.
+              If that fails, the old one is put back.
+            </li>
+          )}
+          {toRemove.length > 0 && (
+            <li>
+              <b>Remove {plural(toRemove.length, "emote")}</b> your base set doesn&apos;t have:{" "}
+              {toRemove
+                .slice(0, 10)
+                .map((e) => e.alias)
+                .join(", ")}
+              {toRemove.length > 10 ? `, and ${toRemove.length - 10} more` : ""}
             </li>
           )}
           {freshCapacity != null && (
             <li>
-              {used + slotsNeeded}/{freshCapacity} slots used afterwards
+              {s.target.name} will use {used + slotsNeeded - freed} of {freshCapacity} slots
             </li>
           )}
         </ul>
       ),
-      confirmLabel: toSwap.length ? "Update set" : "Add emotes",
+      confirmLabel: toRemove.length || toSwap.length ? "Save changes" : "Add emotes",
+      destructive: toRemove.length > 0,
     });
     if (!ok) return;
 
@@ -649,11 +719,12 @@ export default function Home() {
     setApplying(true);
     setApplyStates((prev) => {
       const next = { ...prev };
-      for (const r of [...toAdd, ...toSwap]) next[r.alias] = { state: "queued" };
+      for (const r of [...toRemove, ...toAdd, ...toSwap]) next[r.alias] = { state: "queued" };
       return next;
     });
     let added = 0;
     let swapped = 0;
+    let removedN = 0;
     let failed = 0;
     let full = false;
     let fatal: string | null = null;
@@ -670,7 +741,21 @@ export default function Home() {
       return full || !!fatal;
     };
 
-    for (const row of toAdd) {
+    // Removals first: they free slots for the adds that follow.
+    for (const entry of toRemove) {
+      if (stopRef.current || sessionRef.current !== s) break;
+      setApplyStates((prev) => ({ ...prev, [entry.alias]: { state: "running" } }));
+      try {
+        await removeEmoteFromSet(token, s.target.id, entry.emote.id, entry.alias);
+        removedN++;
+        setApplyStates((prev) => ({ ...prev, [entry.alias]: { state: "removed" } }));
+      } catch (e) {
+        if (fail(entry, e)) break;
+      }
+      await sleep(250);
+    }
+
+    for (const row of full || fatal ? [] : toAdd) {
       if (stopRef.current || sessionRef.current !== s) break;
       const emote = desiredEmote(row)!;
       // A name left empty by an interrupted swap keeps the zero-width setting the target had.
@@ -722,8 +807,8 @@ export default function Home() {
           });
         }
         const suffix = restored
-          ? ` The previous emote (${cur.emote.defaultName}) was put back.`
-          : ` The previous emote (${cur.emote.defaultName}) couldn't be put back; re-add it on 7tv.app.`;
+          ? ` The old one (${cur.emote.defaultName}) was put back.`
+          : ` The old one (${cur.emote.defaultName}) couldn't be put back. Re-add it on 7tv.app.`;
         if (fail(row, e, suffix)) break;
       }
       await sleep(250);
@@ -737,33 +822,36 @@ export default function Home() {
     setApplying(false);
 
     if (sessionRef.current !== s) return; // cancelled mid-run
-    const done = `${plural(added, "emote")} added${swapped ? `, ${swapped} swapped` : ""}`;
+    const done =
+      [`${added} added`, swapped && `${swapped} swapped`, removedN && `${removedN} removed`]
+        .filter(Boolean)
+        .join(", ");
     if (failed || stale.length) setFilter("errors");
     if (full) {
       await ask({
-        title: "The target set is full",
-        body: `7TV rejected a change because ${s.target.name} reached its capacity (${done} before that). Free up space or mark more emotes as don't copy, then continue.`,
+        title: `${s.target.name} is full`,
+        body: `7TV turned down a change because ${s.target.name} hit its capacity (${done} before that). Free up some space or skip a few more emotes, then save again.`,
       });
     } else if (fatal) {
       await ask({
-        title: "Stopped",
-        body: `${fatal} (${done} before this happened.) Your mapping is saved, so you can continue once it's sorted out.`,
+        title: "Stopped early",
+        body: `${fatal} (${done} before that.) Your picks are saved, so you can carry on once it's sorted.`,
       });
     } else if (failed || stale.length) {
       await ask({
-        title: `${plural(failed + stale.length, "emote")} couldn't be updated`,
-        body: `${done}. The ones that didn't go through are listed under "Couldn't update" with the reason.`,
+        title: `${plural(failed + stale.length, "emote")} failed`,
+        body: `${done}. The rest are listed at the top with the reason. Fix them and save again.`,
       });
     } else if (!stopRef.current) {
-      finish(s, added, swapped);
+      finish(s, added, swapped, removedN);
     }
   };
 
   /** Every emote is in place: the mapping is complete, so it stops being "in progress". */
-  const finish = (s: Session, added: number, swapped: number) => {
+  const finish = (s: Session, added: number, swapped: number, removedN: number) => {
     clearMapping();
     resetSession();
-    setCompleted({ added, swapped, target: s.target.name });
+    setCompleted({ added, swapped, removed: removedN, target: s.target.name });
   };
 
   // ---- Render ----
@@ -772,90 +860,106 @@ export default function Home() {
     if (filter === "all") return true;
     if (filter === "errors") return applyStates[row.alias]?.state === "error";
     if (filter === "changed") return isMapped(row.alias) && isSwap(row);
-    if (isMapped(row.alias)) return false;
+    if (filter === "remove") return isExtra(row.alias) && c?.kind === "remove";
+    if (isMapped(row.alias) || isExtra(row.alias)) return false;
     if (filter === "undecided") return !c;
     return c?.kind === filter;
   };
+  const targetName = session?.target.name ?? "your seasonal set";
+  const sectionRows = (kind: Step["kind"]) =>
+    steps.flatMap((st, index) => {
+      if (st.kind !== kind) return [];
+      const row = st.kind === "extra" ? st.entry : stepRow(st)!;
+      return matchesFilter(row) ? [{ row, index }] : [];
+    });
   const overviewSections = [
-    { title: "To add", rows: pending.map((row, i) => ({ row, index: i })).filter(({ row }) => matchesFilter(row)) },
-    {
-      title: "Already in the target",
-      rows: (session?.mapped ?? [])
-        .map((row, i) => ({ row, index: summaryStep + 1 + i }))
-        .filter(({ row }) => matchesFilter(row)),
-    },
+    { title: `New to ${targetName}`, rows: sectionRows("pending") },
+    { title: `Already in ${targetName}`, rows: sectionRows("mapped") },
+    { title: `Only in ${targetName}`, rows: sectionRows("extra"), extra: true },
   ];
-
-  if (!hydrated) return null;
 
   const themeItems = Object.entries(THEMES).map(([id, t]) => ({ id, label: t.label }));
   const filterItems = [
-    { id: "all", label: `All (${rows.length})` },
-    { id: "undecided", label: `Not reviewed (${stats.undecided})` },
-    { id: "replace", label: `Seasonal (${stats.replace})` },
-    { id: "original", label: `Kept original (${stats.original})` },
-    { id: "exclude", label: `Not copied (${stats.exclude})` },
-    { id: "changed", label: `Changed, already in target (${swaps.length})` },
+    { id: "all", label: `All (${rows.length + extras.length})` },
+    { id: "undecided", label: `Unreviewed (${stats.undecided})` },
+    { id: "replace", label: `Seasonal picks (${stats.replace})` },
+    { id: "original", label: `Copied as-is (${stats.original})` },
+    { id: "exclude", label: `Skipped (${stats.exclude})` },
+    ...(session?.mapped.length ? [{ id: "changed", label: `Swapping (${swaps.length})` }] : []),
+    ...(extras.length ? [{ id: "remove", label: `Removing (${stats.remove})` }] : []),
     { id: "errors", label: `Failed (${stats.errors})` },
   ];
   const free = capacity == null ? null : capacity - projected;
-  const targetName = session?.target.name ?? "";
+  // "Add 18 emotes to Halloween" when it's only adds; otherwise one total ("Save 21 changes to Halloween"),
+  // with the breakdown shown in the stats and the confirm dialog.
+  const changeCount = plan.length + swaps.length + removals.length;
   const applyLabel =
-    plan.length && swaps.length
-      ? `Add ${plan.length}, swap ${swaps.length} in ${targetName}`
-      : plan.length
+    changeCount === 0
+      ? "Finish"
+      : changeCount === plan.length
         ? `Add ${plural(plan.length, "emote")} to ${targetName}`
-        : swaps.length
-          ? `Swap ${plural(swaps.length, "emote")} in ${targetName}`
-          : "Finish mapping";
+        : `Save ${plural(changeCount, "change")} to ${targetName}`;
   const interrupted = Object.keys(removed);
+
+  const header = (
+    <header className="top">
+      <h1>
+        {/* All three are rendered and CSS picks one from <html data-theme>, which an inline script sets before
+            first paint, so the logo is right even before hydration. */}
+        <span className="logo" aria-hidden>
+          <span className="logo-halloween">🎃</span>
+          <span className="logo-winter">❄️</span>
+          <span className="logo-neutral">✨</span>
+        </span>{" "}
+        89TV
+      </h1>
+      <p className="tagline">Make a seasonal copy of your 7TV emote set</p>
+      {me && (
+        <div className="me">
+          {me.mainConnection?.platformAvatarUrl && <img src={me.mainConnection.platformAvatarUrl} alt="" />}
+          <span>{me.mainConnection?.platformDisplayName ?? me.id}</span>
+          <Button className="link-button" onPress={() => signOut()}>
+            Sign out
+          </Button>
+        </div>
+      )}
+    </header>
+  );
+
+  // Before hydration (and in the prerendered HTML) only the header shows; nothing below it can be right yet.
+  if (!hydrated) return <main>{header}</main>;
 
   return (
     <main>
       {dialog}
-      <header className="top">
-        <h1>
-          <span className="logo" aria-hidden>
-            {theme === "christmas" ? "❄️" : theme === "halloween" ? "🎃" : "✨"}
-          </span>{" "}
-          89TV
-        </h1>
-        <p className="tagline">Make a seasonal copy of your 7TV emote set</p>
-        {me && (
-          <div className="me">
-            {me.mainConnection?.platformAvatarUrl && <img src={me.mainConnection.platformAvatarUrl} alt="" />}
-            <span>{me.mainConnection?.platformDisplayName ?? me.id}</span>
-            <Button className="link-button" onPress={() => signOut()}>
-              Sign out
-            </Button>
-          </div>
-        )}
-      </header>
+      {header}
 
       {!token ? (
         <TokenGate onToken={setToken} error={authError} />
-      ) : !me ? (
-        <section className="card narrow center">
-          {authError ? (
-            <>
-              <p className="error">{authError}</p>
-              <Button className="btn" onPress={() => signOut()}>
-                Use a different token
-              </Button>
-            </>
-          ) : (
-            <p className="muted">Checking your 7TV session…</p>
-          )}
+      ) : account === "error" ? (
+        <section className="card narrow center" role="alert">
+          <p>{me ? "Couldn't load your emote sets." : "Couldn't check your 7TV session."}</p>
+          <p className="error">{authError}</p>
+          <div className="buttons-row">
+            <Button className="btn primary" onPress={() => setAccountAttempt((n) => n + 1)}>
+              Retry
+            </Button>
+            <Button className="btn" onPress={() => signOut()}>
+              Use a different token
+            </Button>
+          </div>
         </section>
+      ) : !me ? (
+        <LoadingCard message="Signing you in…" />
       ) : session ? (
         <>
-          <section className="card toolbar" aria-label="Mapping in progress">
+          <section className="card toolbar" aria-label="Your progress">
             <div className="summary">
               <div className="pair">
                 <b>{session.source.name}</b> <span className="muted">→</span> <b>{session.target.name}</b>
               </div>
               <div className="muted small">
-                {THEMES[session.params.theme].label} · tags {session.tags.join(", ")} ·{" "}
+                Looking for emotes tagged {session.tags.join(" or ")}, sorted by{" "}
                 {SORT_OPTIONS.find((i) => i.id === session.params.sortBy)?.label}
               </div>
               <div className="stats">
@@ -863,21 +967,29 @@ export default function Home() {
                   <b>{stats.replace}</b> seasonal
                 </span>
                 <span>
-                  <b>{stats.original}</b> kept
+                  <b>{stats.original}</b> as-is
                 </span>
                 <span>
-                  <b>{stats.exclude}</b> not copied
+                  <b>{stats.exclude}</b> skipped
                 </span>
                 <span>
-                  <b>{stats.undecided}</b> to review
+                  <b>{stats.undecided}</b> unreviewed
                 </span>
-                <span className="muted">
-                  {session.mapped.length} already in target
-                  {swaps.length ? ` (${swaps.length} to swap)` : ""}
-                </span>
+                {session.mapped.length > 0 && (
+                  <span className="muted">
+                    {session.mapped.length} already in {targetName}
+                    {swaps.length ? ` (swapping ${swaps.length})` : ""}
+                  </span>
+                )}
+                {extras.length > 0 && (
+                  <span className="muted">
+                    {extras.length} only in {targetName}
+                    {removals.length ? ` (removing ${removals.length})` : ""}
+                  </span>
+                )}
                 {capacity != null && free != null && (
                   <span className={free < 0 ? "error" : "muted"}>
-                    {free < 0 ? `${-free} over capacity` : `${plural(free, "slot")} left after adding`}
+                    {free < 0 ? `${-free} over capacity` : `${plural(free, "slot")} left after saving`}
                   </span>
                 )}
               </div>
@@ -893,23 +1005,29 @@ export default function Home() {
                   Stop
                 </Button>
               ) : (
-                <Button className="btn primary" onPress={apply}>
-                  {applyLabel}
+                <Button className="btn primary" onPress={apply} isDisabled={preparing}>
+                  {preparing ? (
+                    <>
+                      <Spinner label={`Checking ${targetName}`} size="sm" /> Checking {targetName}…
+                    </>
+                  ) : (
+                    applyLabel
+                  )}
                 </Button>
               )}
               <Button className="btn ghost-danger" isDisabled={applying} onPress={cancelMapping}>
-                Cancel mapping
+                Start over
               </Button>
             </div>
             {stats.errors > 0 && !applying && (
-              <div className="problems" role="region" aria-label="Emotes that couldn't be updated">
-                <h3>Couldn&apos;t update {plural(stats.errors, "emote")}</h3>
+              <div className="problems" role="region" aria-label="Failed emotes">
+                <h3>{plural(stats.errors, "emote")} failed</h3>
                 <ul>
-                  {rows.flatMap((r, i) =>
+                  {[...rows, ...extras].flatMap((r) =>
                     applyStates[r.alias]?.state === "error"
                       ? [
                           <li key={r.alias}>
-                            <Button className="link-button" onPress={() => setIndex(stepOfRow(i))}>
+                            <Button className="link-button" onPress={() => setIndex(stepOfAlias(r.alias))}>
                               {r.alias}
                             </Button>
                             : {applyStates[r.alias]?.message}
@@ -922,22 +1040,22 @@ export default function Home() {
             )}
             {interrupted.length > 0 && (
               <div className="alert small" role="alert">
-                {plural(interrupted.length, "swap")} ({interrupted.join(", ")}) {interrupted.length === 1 ? "was" : "were"}{" "}
-                interrupted when the page closed: the old emote was removed but the new one wasn&apos;t added yet.
-                Press Add to finish, or pick the <i>previously in target</i> emote to restore it.
+                The page closed partway through {interrupted.length === 1 ? "a swap" : `${interrupted.length} swaps`} (
+                {interrupted.join(", ")}): the old emote came out but the new one didn&apos;t go in yet. Save again to
+                finish, or pick the <i>previously in {targetName}</i> emote to put it back.
               </div>
             )}
             {pause && (
               <div className="notice small" role="status">
                 {pause.bucket === "search"
-                  ? `7TV's search rate limit was reached. Searches resume in ${pause.seconds}s.`
-                  : `7TV is rate limiting requests. Continuing in ${pause.seconds}s.`}
+                  ? `You've hit 7TV's search limit. Searching again in ${pause.seconds}s.`
+                  : `7TV asked us to slow down. Carrying on in ${pause.seconds}s.`}
               </div>
             )}
             {(applying || addedCount > 0) && (
               <ProgressBar
                 className="progress"
-                aria-label="Adding emotes"
+                aria-label={`Saving to ${targetName}`}
                 value={addedCount}
                 maxValue={addedCount + plan.length}
               >
@@ -960,10 +1078,14 @@ export default function Home() {
               canPrev={index > 0}
               counts={stats}
               swapCount={swaps.length}
-              mappedCount={atEnd ? 0 : session.mapped.length}
+              removeCount={removals.length}
+              mappedCount={session.mapped.length}
+              extraCount={extras.length}
+              sourceName={session.source.name}
               targetName={session.target.name}
-              canApply={!applying}
-              applyLabel={applyLabel}
+              onJump={jumpTo}
+              canApply={!applying && !preparing}
+              applyLabel={preparing ? `Checking ${targetName}…` : applyLabel}
               onApply={apply}
               onReviewUndecided={jumpToNextUndecided}
               onNavigate={navigate}
@@ -972,16 +1094,13 @@ export default function Home() {
             <MappingFocus
               key={`${session.source.id}:${current.alias}`}
               source={current}
-              position={
-                index < summaryStep
-                  ? `${index + 1} of ${summaryStep}`
-                  : `${index - summaryStep} of ${session.mapped.length}`
-              }
+              position={step && "n" in step ? `${step.n} of ${step.of}` : ""}
               canPrev={index > 0}
               canNext={index < stepCount - 1}
               inTarget={targetEntries[current.alias]}
               previous={removed[current.alias]}
               tags={session.tags}
+              targetName={session.target.name}
               choice={choiceOf(current.alias)}
               decided={!!choices[current.alias] && !isMapped(current.alias)}
               search={searches[current.alias]}
@@ -991,9 +1110,23 @@ export default function Home() {
               onSearch={(opts) => void runSearch(current, opts)}
               onNavigate={navigate}
             />
+          ) : currentExtra && step?.kind === "extra" ? (
+            <ExtraFocus
+              key={`extra:${currentExtra.alias}`}
+              entry={currentExtra}
+              position={`${step.n} of ${step.of}`}
+              canPrev={index > 0}
+              canNext={index < stepCount - 1}
+              sourceName={session.source.name}
+              targetName={session.target.name}
+              choice={choiceOf(currentExtra.alias)}
+              apply={applyStates[currentExtra.alias]}
+              onChoose={choose}
+              onNavigate={navigate}
+            />
           ) : null}
 
-          {rows.length > 0 && (
+          {rows.length + extras.length > 0 && (
             <section className="card" aria-label="All emotes">
               <div className="overview-head">
                 <h3>All emotes</h3>
@@ -1020,11 +1153,16 @@ export default function Home() {
         <>
           {completed && (
             <section className="card narrow center done" role="status">
-              <h2>Done!</h2>
+              <h2>{completed.target} is up to date</h2>
               <p>
-                Added {plural(completed.added, "emote")}
-                {completed.swapped ? ` and swapped ${completed.swapped}` : ""} in <b>{completed.target}</b>. The
-                mapping is complete.
+                {[
+                  `Added ${plural(completed.added, "emote")}`,
+                  completed.swapped && `swapped ${completed.swapped}`,
+                  completed.removed && `removed ${completed.removed}`,
+                ]
+                  .filter(Boolean)
+                  .join(", ")}
+                .
               </p>
             </section>
           )}
@@ -1033,26 +1171,39 @@ export default function Home() {
             <section className="card narrow center">
               {loadError ? (
                 <>
-                  <p>Your in-progress mapping couldn&apos;t be loaded:</p>
+                  <p>Couldn&apos;t pick up where you left off.</p>
                   <p className="error">{loadError}</p>
                   <div className="buttons-row">
                     <Button className="btn primary" onPress={() => void startMapping(resume, resume)}>
                       Try again
                     </Button>
                     <Button className="btn ghost-danger" onPress={cancelMapping}>
-                      Discard it
+                      Start over
                     </Button>
                   </div>
                 </>
               ) : (
-                <p className="muted">Resuming your in-progress mapping…</p>
+                <div className="loading-card">
+                  <Spinner label="Picking up where you left off" />
+                  <p className="muted">Picking up where you left off…</p>
+                </div>
               )}
             </section>
+          ) : account !== "ready" ? (
+            <LoadingCard message="Loading your emote sets…" />
           ) : (
-            <section className="card setup" aria-label="Start a mapping">
-              <SetPicker label="Copy from" sets={sets} value={sourceId} onChange={setSourceId} allowCustom />
+            <section className="card setup" aria-label="Choose your sets">
               <SetPicker
-                label="Into (seasonal set, must already exist)"
+                label="Base set"
+                description="The emotes you want seasonal versions of"
+                sets={sets}
+                value={sourceId}
+                onChange={setSourceId}
+                allowCustom
+              />
+              <SetPicker
+                label="Seasonal set"
+                description="Where they go. Create it on 7tv.app first."
                 sets={sets}
                 value={targetId}
                 onChange={setTargetId}
@@ -1064,17 +1215,17 @@ export default function Home() {
                   items={themeItems}
                   value={theme}
                   onChange={(id) => setTheme(id as Theme)}
-                  description={theme === "custom" ? undefined : `Searches emotes tagged ${tags.join(" or ")}`}
+                  description={theme === "custom" ? undefined : `Looks for emotes tagged ${tags.join(" or ")}`}
                 />
                 {theme === "custom" && (
                   <TextField className="field" value={customTags} onChange={setCustomTags}>
                     <Label className="visually-hidden">Custom tags</Label>
-                    <Input placeholder="tags, comma separated (e.g. spring, easter)" />
+                    <Input placeholder="Tags to look for, e.g. spring, easter" />
                   </TextField>
                 )}
               </div>
               <SelectField
-                label="Sort results by"
+                label="Sort by"
                 items={SORT_OPTIONS}
                 value={sortBy}
                 onChange={(id) => setSortBy(id as SortBy)}
@@ -1087,14 +1238,22 @@ export default function Home() {
                     sourceId && targetId && void startMapping({ sourceId, targetId, theme, customTags, sortBy })
                   }
                 >
-                  {loading ? "Loading…" : "Start mapping"}
+                  {loading ? (
+                    <>
+                      <Spinner label="Loading your sets" size="sm" /> Loading your sets…
+                    </>
+                  ) : (
+                    "Start picking"
+                  )}
                 </Button>
-                {sourceId && sourceId === targetId && <span className="error small">Pick two different sets.</span>}
-                {theme === "custom" && !tags.length && <span className="muted small">Enter at least one tag.</span>}
+                {sourceId && sourceId === targetId && (
+                  <span className="error small">Your base and seasonal sets need to be different.</span>
+                )}
+                {theme === "custom" && !tags.length && <span className="muted small">Add at least one tag.</span>}
                 {loadError && <span className="error small">{loadError}</span>}
                 {sets.length === 0 && (
                   <span className="muted small">
-                    No editable emote sets found on your account. Create the seasonal set on 7tv.app first.
+                    You can&apos;t edit any emote sets yet. Create your seasonal set on 7tv.app, then reload.
                   </span>
                 )}
               </div>

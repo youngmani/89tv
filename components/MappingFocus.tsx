@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Form, Input, Link, ProgressBar, TextField, ToggleButton } from "react-aria-components";
-import { SelectField } from "@/components/ui";
+import { Button, Checkbox, Form, Input, Link, TextField, ToggleButton } from "react-aria-components";
+import { SelectField, Spinner } from "@/components/ui";
 import {
   type ApplyState,
   type Choice,
@@ -76,7 +76,7 @@ function shouldIgnoreKey(e: KeyboardEvent) {
 
 /**
  * The emote currently being mapped. Picking anything advances to the next emote.
- * Keys: 0 original (or current, for emotes already in the target) · 1–9 pick a result · X don't copy ·
+ * Keys: 0 keep the base emote (or the current one, if it's already in the seasonal set) · 1–9 pick a result · X skip ·
  * →/Enter next · ← back.
  */
 export function MappingFocus({
@@ -87,6 +87,7 @@ export function MappingFocus({
   inTarget,
   previous,
   tags,
+  targetName,
   choice,
   decided,
   search,
@@ -107,6 +108,8 @@ export function MappingFocus({
   previous: RemovedEntry | undefined;
   /** The theme's tags, for labelling the tag filter. */
   tags: string[];
+  /** The seasonal set's name, used in labels. */
+  targetName: string;
   choice: Choice;
   decided: boolean;
   search: SearchState | undefined;
@@ -161,24 +164,30 @@ export function MappingFocus({
   const keepsCurrent = mapped && (choice.kind === "keep" || (choice.kind === "original" && current?.id === source.emote.id));
 
   return (
-    <section className="card focus" aria-label={`Mapping ${source.alias}`}>
+    <section className="card focus" aria-label={`Picking for ${source.alias}`}>
       <div className="focus-head">
-        <Button className="btn nav" onPress={() => onNavigate(-1)} isDisabled={!canPrev} aria-label="Previous">
+        {/* Hidden (not just disabled) when unusable, but it keeps its space so nothing shifts. */}
+        <Button
+          className={`btn nav${canPrev ? "" : " invisible"}`}
+          onPress={() => onNavigate(-1)}
+          isDisabled={!canPrev}
+          aria-label="Previous"
+        >
           ←
         </Button>
         <div className="focus-title">
           <img src={emoteImage(source.emote.id, 3)} alt="" />
           <div className="alias">{source.alias}</div>
           <div className="muted small">
-            {aliased ? <>alias of {source.emote.defaultName} · </> : null}
+            {aliased ? <>7TV name: {source.emote.defaultName} · </> : null}
             {source.flags.zeroWidth ? "zero-width · " : ""}
-            {mapped ? "already in target · " : ""}
+            {mapped ? `already in ${targetName} · ` : ""}
             {position}
-            {decided ? " · reviewed" : ""}
+            {decided ? " · picked" : ""}
           </div>
         </div>
         <Button
-          className="btn nav"
+          className={`btn nav${canNext ? "" : " invisible"}`}
           onPress={() => onChoose(choice, true)}
           isDisabled={!canNext}
           aria-label="Next"
@@ -213,10 +222,10 @@ export function MappingFocus({
             <span className="box" aria-hidden>
               ✓
             </span>
-            Only tagged {tags.join(" / ")}
+            Only {tags.join(" / ")} emotes
           </Checkbox>
           <SelectField
-            aria-label="Sort results for this emote"
+            aria-label="Sort by"
             className="compact"
             items={SORT_OPTIONS}
             value={opts.sortBy}
@@ -227,17 +236,15 @@ export function MappingFocus({
 
       {apply?.state === "error" && (
         <div className="alert" role="alert">
-          <b>Couldn&apos;t update this emote:</b> {apply.message}
+          <b>Failed:</b> {apply.message}
         </div>
       )}
-      {apply?.state === "added" && <div className="ok small">✓ Added to the target set</div>}
-      {apply?.state === "updated" && <div className="ok small">✓ Swapped in the target set</div>}
+      {apply?.state === "added" && <div className="ok small">✓ Added to {targetName}</div>}
+      {apply?.state === "updated" && <div className="ok small">✓ Swapped in {targetName}</div>}
 
       <div className={`tiles-area${loading ? " loading" : ""}`}>
         {loading && (
-          <ProgressBar className="spinner" isIndeterminate aria-label="Searching">
-            <span className="spinner-ring" aria-hidden />
-          </ProgressBar>
+          <Spinner label="Searching" className="spinner" />
         )}
       <div className="tiles">
         {previous && (
@@ -245,8 +252,8 @@ export function MappingFocus({
             emote={previous.emote}
             selected={chosen?.id === previous.emote.id}
             onSelect={() => onChoose({ kind: "replace", emote: previous.emote }, true)}
-            badge="previously in target"
-            note="removed by an interrupted swap"
+            badge="previous"
+            note="taken out by an unfinished swap"
           />
         )}
         {mapped && current && (
@@ -254,7 +261,7 @@ export function MappingFocus({
             emote={current}
             selected={keepsCurrent}
             onSelect={() => onChoose({ kind: "keep" }, true)}
-            badge={current.deleted ? "in target (deleted)" : "in target"}
+            badge={current.deleted ? "current (deleted)" : "current"}
             hotkey="0"
           />
         )}
@@ -263,7 +270,7 @@ export function MappingFocus({
             emote={source.emote}
             selected={choice.kind === "original" && !keepsCurrent}
             onSelect={() => onChoose({ kind: "original" }, true)}
-            badge="original"
+            badge="base"
             hotkey={mapped ? undefined : "0"}
           />
         )}
@@ -276,7 +283,7 @@ export function MappingFocus({
             onSelect={() => onChoose({ kind: "replace", emote: e }, true)}
             isDisabled={loading}
             hotkey={i < 9 ? String(i + 1) : undefined}
-            note={e.inTarget.length ? `in target as ${e.inTarget.join(", ")}` : undefined}
+            note={e.inTarget.length ? `in ${targetName} as ${e.inTarget.join(", ")}` : undefined}
           />
         ))}
       </div>
@@ -287,7 +294,7 @@ export function MappingFocus({
           "Searching…"
         ) : search.status === "error" ? (
           <>
-            <span className="error">Search failed: {search.error}</span>{" "}
+            <span className="error">Couldn&apos;t search: {search.error}</span>{" "}
             <Button className="link-button" onPress={() => onSearch(search)}>
               Retry
             </Button>
@@ -295,14 +302,16 @@ export function MappingFocus({
         ) : (
           <>
             {search.total} result{search.total === 1 ? "" : "s"} for “{search.query}”
-            {search.hidden > 0 && ` · ${search.hidden} private or deleted hidden`}
+            {search.hidden > 0 && ` · hiding ${search.hidden} private or deleted`}
             {items.length === 0 &&
-              (mapped ? " — nothing else to swap in." : " — no match, so the original will be copied.")}
+              (mapped
+                ? " — no other versions to swap in."
+                : " — no seasonal version, so the base emote will be copied.")}
             {search.exact && (
               <>
                 {" · "}
                 <Button className="link-button" onPress={() => update({ exact: false }, true)}>
-                  try a fuzzy search
+                  try a looser match
                 </Button>
               </>
             )}
@@ -310,7 +319,7 @@ export function MappingFocus({
               <>
                 {" · "}
                 <Button className="link-button" onPress={() => update({ tagged: false }, true)}>
-                  search without the tag filter
+                  include non-{tags.join("/")} emotes
                 </Button>
               </>
             )}
@@ -331,12 +340,12 @@ export function MappingFocus({
             isSelected={choice.kind === "exclude"}
             onChange={() => onChoose({ kind: "exclude" }, true)}
           >
-            Don&apos;t copy this emote <kbd aria-hidden>X</kbd>
+            Skip this emote <kbd aria-hidden>X</kbd>
           </ToggleButton>
         )}
         <div className="muted small keys" aria-hidden>
-          <kbd>0</kbd> {mapped ? "keep what's in the target" : "keep original"} · <kbd>1</kbd>–<kbd>9</kbd> pick
-          {mapped ? "" : <> · <kbd>X</kbd> don&apos;t copy</>} · <kbd>→</kbd>/<kbd>Enter</kbd> next · <kbd>←</kbd> back
+          <kbd>0</kbd> {mapped ? "keep current" : "use base"} · <kbd>1</kbd>–<kbd>9</kbd> pick
+          {mapped ? "" : <> · <kbd>X</kbd> skip</>} · <kbd>→</kbd>/<kbd>Enter</kbd> next · <kbd>←</kbd> back
         </div>
       </div>
     </section>
