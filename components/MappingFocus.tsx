@@ -1,0 +1,344 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Button, Checkbox, Form, Input, Link, ProgressBar, TextField, ToggleButton } from "react-aria-components";
+import { SelectField } from "@/components/ui";
+import {
+  type ApplyState,
+  type Choice,
+  type RemovedEntry,
+  SORT_OPTIONS,
+  type SearchOptions,
+  type SearchState,
+} from "@/lib/mapping";
+import { type EmoteSummary, type SetEmote, type SortBy, emoteImage, emotePage, ownerName } from "@/lib/seventv";
+
+/** A selectable emote. The 7tv.app link is a sibling of the button, never nested inside it. */
+function Tile({
+  emote,
+  selected,
+  onSelect,
+  badge,
+  hotkey,
+  note,
+  isDisabled,
+}: {
+  emote: EmoteSummary;
+  selected: boolean;
+  onSelect: () => void;
+  isDisabled?: boolean;
+  badge?: string;
+  hotkey?: string;
+  /** Extra context shown under the owner, e.g. "in target as foo". */
+  note?: string;
+}) {
+  return (
+    <div className="tile-wrap">
+      <ToggleButton
+        className="tile"
+        isSelected={selected}
+        isDisabled={isDisabled}
+        onChange={onSelect}
+        aria-label={`${badge ? `${badge}: ` : ""}${emote.defaultName} by ${ownerName(emote)}${note ? `, ${note}` : ""}`}
+      >
+        {badge && <span className="badge">{badge}</span>}
+        <img src={emoteImage(emote.id, 3)} alt="" />
+        <span className="name">{emote.defaultName}</span>
+        <span className="owner">{ownerName(emote)}</span>
+        {note && <span className="note">{note}</span>}
+        {hotkey && (
+          <kbd className="hotkey" aria-hidden>
+            {hotkey}
+          </kbd>
+        )}
+      </ToggleButton>
+      <Link
+        className="ext"
+        href={emotePage(emote.id)}
+        target="_blank"
+        rel="noreferrer"
+        aria-label={`Open ${emote.defaultName} on 7tv.app`}
+      >
+        ↗
+      </Link>
+    </div>
+  );
+}
+
+/** Shortcuts are ignored while typing, and Enter/Space are left alone on interactive elements. */
+function shouldIgnoreKey(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  if (e.metaKey || e.ctrlKey || e.altKey || !t?.closest) return true;
+  if (t.closest("input, textarea, [role=listbox], [role=dialog]")) return true;
+  if ((e.key === "Enter" || e.key === " ") && t.closest("button, a, [role=button], [role=option]")) return true;
+  return false;
+}
+
+/**
+ * The emote currently being mapped. Picking anything advances to the next emote.
+ * Keys: 0 original (or current, for emotes already in the target) · 1–9 pick a result · X don't copy ·
+ * →/Enter next · ← back.
+ */
+export function MappingFocus({
+  source,
+  position,
+  canPrev,
+  canNext,
+  inTarget,
+  previous,
+  tags,
+  choice,
+  decided,
+  search,
+  apply,
+  defaultSort,
+  onChoose,
+  onSearch,
+  onNavigate,
+}: {
+  source: SetEmote;
+  /** e.g. "3 of 18" — where this emote sits in its group. */
+  position: string;
+  canPrev: boolean;
+  canNext: boolean;
+  /** What the target holds under this name, when the emote is already mapped. */
+  inTarget: SetEmote | undefined;
+  /** The emote that held this name before a swap that was interrupted (page closed mid-swap). */
+  previous: RemovedEntry | undefined;
+  /** The theme's tags, for labelling the tag filter. */
+  tags: string[];
+  choice: Choice;
+  decided: boolean;
+  search: SearchState | undefined;
+  /** Result of the last attempt to add or swap this emote, if any. */
+  apply: ApplyState | undefined;
+  /** The mapping's sort; each emote can override it. */
+  defaultSort: SortBy;
+  onChoose: (choice: Choice, advance: boolean) => void;
+  onSearch: (opts: SearchOptions) => void;
+  onNavigate: (delta: number) => void;
+}) {
+  const [opts, setOpts] = useState<SearchOptions>({
+    query: search?.query ?? source.emote.defaultName,
+    exact: search?.exact ?? true,
+    tagged: search?.tagged ?? true,
+    sortBy: search?.sortBy ?? defaultSort,
+  });
+  /** Filters re-run the search immediately; the query text waits for Search / Enter. */
+  const update = (patch: Partial<SearchOptions>, run: boolean) => {
+    const next = { ...opts, ...patch };
+    setOpts(next);
+    if (run) onSearch({ ...next, query: next.query.trim() || source.emote.defaultName });
+  };
+
+  const mapped = !!inTarget;
+  const current = inTarget?.emote;
+  // "0" means "leave it as the source has it": the original for new emotes, the current entry for mapped ones.
+  const baseline: Choice = mapped ? { kind: "keep" } : { kind: "original" };
+  // While a new search runs, the previous results stay up (dimmed, not selectable) under a spinner.
+  const loading = !search || search.status === "loading";
+  const items = (search?.items ?? []).filter((e) => e.id !== current?.id && e.id !== previous?.emote.id);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (shouldIgnoreKey(e)) return;
+      if (e.key === "ArrowLeft") onNavigate(-1);
+      else if (e.key === "ArrowRight" || e.key === "Enter") onChoose(choice, true);
+      else if (e.key === "0") onChoose(baseline, true);
+      else if (e.key.toLowerCase() === "x" && !mapped) onChoose({ kind: "exclude" }, true);
+      else if (/^[1-9]$/.test(e.key) && !loading && items[Number(e.key) - 1])
+        onChoose({ kind: "replace", emote: items[Number(e.key) - 1] }, true);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [choice, items, loading, mapped, baseline, onChoose, onNavigate]);
+
+  const aliased = source.alias !== source.emote.defaultName;
+  const chosen = choice.kind === "replace" ? choice.emote : null;
+  const chosenMissing = chosen && !items.some((e) => e.id === chosen.id);
+  const keepsCurrent = mapped && (choice.kind === "keep" || (choice.kind === "original" && current?.id === source.emote.id));
+
+  return (
+    <section className="card focus" aria-label={`Mapping ${source.alias}`}>
+      <div className="focus-head">
+        <Button className="btn nav" onPress={() => onNavigate(-1)} isDisabled={!canPrev} aria-label="Previous">
+          ←
+        </Button>
+        <div className="focus-title">
+          <img src={emoteImage(source.emote.id, 3)} alt="" />
+          <div className="alias">{source.alias}</div>
+          <div className="muted small">
+            {aliased ? <>alias of {source.emote.defaultName} · </> : null}
+            {source.flags.zeroWidth ? "zero-width · " : ""}
+            {mapped ? "already in target · " : ""}
+            {position}
+            {decided ? " · reviewed" : ""}
+          </div>
+        </div>
+        <Button
+          className="btn nav"
+          onPress={() => onChoose(choice, true)}
+          isDisabled={!canNext}
+          aria-label="Next"
+        >
+          →
+        </Button>
+      </div>
+
+      <Form
+        className="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          update({}, true);
+        }}
+      >
+        <div className="search-row">
+          <TextField className="field grow" value={opts.query} onChange={(query) => update({ query }, false)} aria-label="Search query">
+            <Input />
+          </TextField>
+          <Button type="submit" className="btn">
+            Search
+          </Button>
+        </div>
+        <div className="search-filters">
+          <Checkbox className="checkbox" isSelected={opts.exact} onChange={(exact) => update({ exact }, true)}>
+            <span className="box" aria-hidden>
+              ✓
+            </span>
+            Exact name
+          </Checkbox>
+          <Checkbox className="checkbox" isSelected={opts.tagged} onChange={(tagged) => update({ tagged }, true)}>
+            <span className="box" aria-hidden>
+              ✓
+            </span>
+            Only tagged {tags.join(" / ")}
+          </Checkbox>
+          <SelectField
+            aria-label="Sort results for this emote"
+            className="compact"
+            items={SORT_OPTIONS}
+            value={opts.sortBy}
+            onChange={(id) => update({ sortBy: id as SortBy }, true)}
+          />
+        </div>
+      </Form>
+
+      {apply?.state === "error" && (
+        <div className="alert" role="alert">
+          <b>Couldn&apos;t update this emote:</b> {apply.message}
+        </div>
+      )}
+      {apply?.state === "added" && <div className="ok small">✓ Added to the target set</div>}
+      {apply?.state === "updated" && <div className="ok small">✓ Swapped in the target set</div>}
+
+      <div className={`tiles-area${loading ? " loading" : ""}`}>
+        {loading && (
+          <ProgressBar className="spinner" isIndeterminate aria-label="Searching">
+            <span className="spinner-ring" aria-hidden />
+          </ProgressBar>
+        )}
+      <div className="tiles">
+        {previous && (
+          <Tile
+            emote={previous.emote}
+            selected={chosen?.id === previous.emote.id}
+            onSelect={() => onChoose({ kind: "replace", emote: previous.emote }, true)}
+            badge="previously in target"
+            note="removed by an interrupted swap"
+          />
+        )}
+        {mapped && current && (
+          <Tile
+            emote={current}
+            selected={keepsCurrent}
+            onSelect={() => onChoose({ kind: "keep" }, true)}
+            badge={current.deleted ? "in target (deleted)" : "in target"}
+            hotkey="0"
+          />
+        )}
+        {(!mapped || current?.id !== source.emote.id) && (
+          <Tile
+            emote={source.emote}
+            selected={choice.kind === "original" && !keepsCurrent}
+            onSelect={() => onChoose({ kind: "original" }, true)}
+            badge="original"
+            hotkey={mapped ? undefined : "0"}
+          />
+        )}
+        {chosen && chosenMissing && <Tile emote={chosen} selected onSelect={() => onChoose(choice, true)} badge="chosen" />}
+        {items.map((e, i) => (
+          <Tile
+            key={e.id}
+            emote={e}
+            selected={chosen?.id === e.id}
+            onSelect={() => onChoose({ kind: "replace", emote: e }, true)}
+            isDisabled={loading}
+            hotkey={i < 9 ? String(i + 1) : undefined}
+            note={e.inTarget.length ? `in target as ${e.inTarget.join(", ")}` : undefined}
+          />
+        ))}
+      </div>
+      </div>
+
+      <div className="muted small status" aria-live="polite">
+        {!search || search.status === "loading" ? (
+          "Searching…"
+        ) : search.status === "error" ? (
+          <>
+            <span className="error">Search failed: {search.error}</span>{" "}
+            <Button className="link-button" onPress={() => onSearch(search)}>
+              Retry
+            </Button>
+          </>
+        ) : (
+          <>
+            {search.total} result{search.total === 1 ? "" : "s"} for “{search.query}”
+            {search.hidden > 0 && ` · ${search.hidden} private or deleted hidden`}
+            {items.length === 0 &&
+              (mapped ? " — nothing else to swap in." : " — no match, so the original will be copied.")}
+            {search.exact && (
+              <>
+                {" · "}
+                <Button className="link-button" onPress={() => update({ exact: false }, true)}>
+                  try a fuzzy search
+                </Button>
+              </>
+            )}
+            {search.tagged && (
+              <>
+                {" · "}
+                <Button className="link-button" onPress={() => update({ tagged: false }, true)}>
+                  search without the tag filter
+                </Button>
+              </>
+            )}
+          </>
+        )}
+        {chosen && (
+          <>
+            {" "}
+            · will be {mapped ? "swapped in" : "added"} as <b>{source.alias}</b>
+          </>
+        )}
+      </div>
+
+      <div className="focus-foot">
+        {!mapped && (
+          <ToggleButton
+            className="btn danger"
+            isSelected={choice.kind === "exclude"}
+            onChange={() => onChoose({ kind: "exclude" }, true)}
+          >
+            Don&apos;t copy this emote <kbd aria-hidden>X</kbd>
+          </ToggleButton>
+        )}
+        <div className="muted small keys" aria-hidden>
+          <kbd>0</kbd> {mapped ? "keep what's in the target" : "keep original"} · <kbd>1</kbd>–<kbd>9</kbd> pick
+          {mapped ? "" : <> · <kbd>X</kbd> don&apos;t copy</>} · <kbd>→</kbd>/<kbd>Enter</kbd> next · <kbd>←</kbd> back
+        </div>
+      </div>
+    </section>
+  );
+}
