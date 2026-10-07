@@ -78,7 +78,7 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
     <section className="card narrow">
       <h2>Connect your 7TV account</h2>
       <p className="muted">
-        7TV only lets its own website finish a login, so this tool uses your existing 7tv.app session token. It stays
+        7TV doesn't support third-party login, so this tool uses your existing 7tv.app session token. It stays
         in your browser and is only ever sent to <code>api.7tv.app</code>.
       </p>
 
