@@ -19,6 +19,23 @@ function target(row: SetEmote, c: Choice | undefined, current: SetEmote | undefi
   return want.id === row.emote.id ? null : want;
 }
 
+/**
+ * What the seasonal set ends up with for this row, for the chip's "base → result" display: an emote, or
+ * "exclude" when it's skipped/removed. Unlike target(), this is the end state, not just the change.
+ */
+function result(
+  row: SetEmote,
+  c: Choice | undefined,
+  current: SetEmote | undefined,
+  extra: boolean,
+): EmoteSummary | "exclude" {
+  if (c?.kind === "exclude" || c?.kind === "remove") return "exclude";
+  if (extra) return row.emote;
+  if (c?.kind === "replace") return c.emote;
+  if (current && c?.kind !== "original") return current.emote; // kept as-is (or not reviewed)
+  return row.emote;
+}
+
 function describe(
   row: SetEmote,
   c: Choice | undefined,
@@ -31,7 +48,9 @@ function describe(
     ? c?.kind === "remove"
       ? "only in the seasonal set, removing"
       : "only in the seasonal set, keeping"
-    : current
+    : current && c?.kind === "remove"
+      ? `removing ${current.emote.defaultName} from the seasonal set`
+      : current
     ? t && t !== "exclude"
       ? `swap ${current.emote.defaultName} by ${ownerName(current.emote)} for ${t.defaultName} by ${ownerName(t)}`
       : `already in the seasonal set as ${current.emote.defaultName}`
@@ -80,6 +99,9 @@ function MappingOverviewImpl({
                   const t = target(row, c, cur);
                   const changes = !!t && t !== "exclude";
                   const extra = !!section.extra;
+                  // Every chip reads base → what the seasonal set ends up with (one image when they're the same).
+                  const end = result(row, c, cur, extra);
+                  const differs = end !== "exclude" && end.id !== row.emote.id;
                   return (
                     <Button
                       key={row.alias}
@@ -91,9 +113,11 @@ function MappingOverviewImpl({
                             ? "exclude"
                             : "mapped"
                           : cur
-                            ? changes
-                              ? "replace"
-                              : "mapped"
+                            ? c?.kind === "remove"
+                              ? "exclude"
+                              : changes
+                                ? "replace"
+                                : "mapped"
                             : c && c.kind !== "keep"
                               ? c.kind
                               : "undecided",
@@ -103,14 +127,14 @@ function MappingOverviewImpl({
                       aria-label={`${row.alias}: ${describe(row, c, a, cur, extra)}`}
                       aria-current={index === current ? "step" : undefined}
                     >
-                      <img src={emoteImage((cur?.emote ?? row.emote).id, 1)} alt="" loading="lazy" />
-                      {changes ? (
+                      <img src={emoteImage(row.emote.id, 1)} alt="" loading="lazy" />
+                      {end === "exclude" ? (
+                        <span className="arrow">✗</span>
+                      ) : differs ? (
                         <>
                           <span className="arrow">→</span>
-                          <img src={emoteImage(t.id, 1)} alt="" loading="lazy" />
+                          <img src={emoteImage(end.id, 1)} alt="" loading="lazy" />
                         </>
-                      ) : t === "exclude" ? (
-                        <span className="arrow">✗</span>
                       ) : null}
                       <span className="chip-name">{row.alias}</span>
                     </Button>

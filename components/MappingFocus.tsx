@@ -149,7 +149,8 @@ export function MappingFocus({
       if (e.key === "ArrowLeft") onNavigate(-1);
       else if (e.key === "ArrowRight" || e.key === "Enter") onChoose(choice, true);
       else if (e.key === "0") onChoose(baseline, true);
-      else if (e.key.toLowerCase() === "x" && !mapped) onChoose({ kind: "exclude" }, true);
+      // X: skip (not in the seasonal set yet) or remove (already in it).
+      else if (e.key.toLowerCase() === "x") onChoose({ kind: mapped ? "remove" : "exclude" }, true);
       else if (/^[1-9]$/.test(e.key) && !loading && items[Number(e.key) - 1])
         onChoose({ kind: "replace", emote: items[Number(e.key) - 1] }, true);
       else return;
@@ -178,7 +179,9 @@ export function MappingFocus({
         </Button>
         <div className="focus-title">
           <img src={emoteImage(source.emote.id, 3)} alt="" />
-          <div className="alias">{source.alias}</div>
+          <div className={`alias${choice.kind === "remove" || choice.kind === "exclude" ? " struck" : ""}`}>
+            {source.alias}
+          </div>
           <div className="muted small">
             {aliased ? <>7TV name: {source.emote.defaultName} · </> : null}
             {source.flags.zeroWidth ? "zero-width · " : ""}
@@ -247,6 +250,7 @@ export function MappingFocus({
       )}
       {apply?.state === "added" && <div className="ok small">✓ Added to {targetName}</div>}
       {apply?.state === "updated" && <div className="ok small">✓ Swapped in {targetName}</div>}
+      {apply?.state === "removed" && <div className="ok small">✓ Removed from {targetName}</div>}
 
       <div className={`tiles-area${loading ? " loading" : ""}`}>
         {loading && (
@@ -352,7 +356,15 @@ export function MappingFocus({
       </div>
 
       <div className="focus-foot">
-        {!mapped && (
+        {mapped ? (
+          <ToggleButton
+            className="btn danger"
+            isSelected={choice.kind === "remove"}
+            onChange={() => onChoose({ kind: "remove" }, true)}
+          >
+            Remove from {targetName} <kbd aria-hidden>X</kbd>
+          </ToggleButton>
+        ) : (
           <ToggleButton
             className="btn danger"
             isSelected={choice.kind === "exclude"}
@@ -362,8 +374,8 @@ export function MappingFocus({
           </ToggleButton>
         )}
         <div className="muted small keys" aria-hidden>
-          <kbd>0</kbd> {mapped ? "keep current" : "use base"} · <kbd>1</kbd>–<kbd>9</kbd> pick
-          {mapped ? "" : <> · <kbd>X</kbd> skip</>} · <kbd>→</kbd>/<kbd>Enter</kbd> next · <kbd>←</kbd> back
+          <kbd>0</kbd> {mapped ? "keep current" : "use base"} · <kbd>1</kbd>–<kbd>9</kbd> pick · <kbd>X</kbd>{" "}
+          {mapped ? "remove" : "skip"} · <kbd>→</kbd>/<kbd>Enter</kbd> next · <kbd>←</kbd> back
         </div>
       </div>
     </section>

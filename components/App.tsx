@@ -54,6 +54,15 @@ const AUTO_SEARCH_BURST = 3;
 const AUTO_SEARCH_WINDOW_MS = 3000;
 const AUTO_SEARCH_DELAY_MS = 1000;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** How long "Start picking" waits for the first card before showing it anyway. */
+const FIRST_CARD_BUDGET_MS = 1000;
+/** Resolves once the image has loaded (or failed), so it's in the cache before it's shown. */
+const preloadImage = (src: string) =>
+  new Promise<void>((resolve) => {
+    const img = new Image();
+    img.onload = img.onerror = () => resolve();
+    img.src = src;
+  });
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 interface MappingParams {
@@ -154,6 +163,8 @@ export function App({ children }: { children?: React.ReactNode }) {
   const [pause, setPause] = useState<{ bucket: string; seconds: number } | null>(null);
 
   const stopRef = useRef(false);
+  /** Lets startMapping (defined above runSearch) start the first card's search. */
+  const runSearchRef = useRef<(row: SetEmote) => Promise<SearchState>>(() => Promise.reject(new Error("not ready")));
   const sessionRef = useRef<Session | null>(null);
   const searchPromises = useRef(new Map<string, Promise<SearchState>>());
   const { dialog, ask } = useDialog();
@@ -200,8 +211,11 @@ export function App({ children }: { children?: React.ReactNode }) {
   }, [storage, initialSelection]);
 
   useEffect(() => {
+    // Wait until startup has loaded the real theme: before that `theme` is just the initial placeholder, and
+    // writing it would overwrite the inline <head> script's (correct) palette for a frame.
+    if (!hydrated) return;
     document.documentElement.dataset.theme = THEMES[theme].palette;
-  }, [theme]);
+  }, [theme, hydrated]);
 
   const resetSession = useCallback(() => {
     sessionRef.current = null;
@@ -352,6 +366,20 @@ export function App({ children }: { children?: React.ReactNode }) {
         setTargetEntries(Object.fromEntries(mappedRows.map((r) => [r.alias, entries.get(r.alias)!])));
         setChoices(restored);
         setRemoved(removed);
+        // Give the first card up to FIRST_CARD_BUDGET_MS to be ready (its search plus every image on it) while
+        // the button shows a spinner, so it doesn't appear half-loaded and shift around. If that takes longer,
+        // switch anyway: the card shows its usual loading state, like any other slow card.
+        const first = stepRow(steps[step]);
+        if (first) {
+          const current = entries.get(first.alias)?.emote;
+          const ready = runSearchRef.current(first).then((st) =>
+            Promise.all(
+              [first.emote, current, ...st.items].flatMap((e) => (e ? [preloadImage(emoteImage(e.id, 3))] : [])),
+            ),
+          );
+          await Promise.race([ready, sleep(FIRST_CARD_BUDGET_MS)]);
+          if (sessionRef.current !== s) return; // superseded (e.g. cancelled) while waiting
+        }
         setIndex(step);
         setSession(s);
         setResume(null);
@@ -478,6 +506,8 @@ export function App({ children }: { children?: React.ReactNode }) {
     return p;
   }, [api]);
 
+  runSearchRef.current = runSearch;
+
   /** Default search for an emote: its unaliased name, exact match, seasonal tags. Runs once per emote. */
   const ensureSearch = useCallback(
     (row: SetEmote) => searchPromises.current.get(row.alias) ?? runSearch(row),
@@ -587,12 +617,24 @@ export function App({ children }: { children?: React.ReactNode }) {
 
   const plan = pending.filter((r) => choiceOf(r.alias).kind !== "exclude" && applyStates[r.alias]?.state !== "added");
   const swaps = session?.mapped.filter(isSwap) ?? [];
-  const removals = extras.filter((e) => choiceOf(e.alias).kind === "remove" && applyStates[e.alias]?.state !== "removed");
+  /**
+   * Seasonal-set entries the user chose to remove: target-only emotes, plus emotes in both sets marked
+   * "remove" (for those, the entry is whatever the seasonal set currently holds under that name).
+   */
+  const removalEntries = (sess: Session | null): SetEmote[] => [
+    ...(sess?.extras ?? []).filter((e) => choiceOf(e.alias).kind === "remove"),
+    ...(sess?.mapped ?? []).flatMap((r) =>
+      choiceOf(r.alias).kind === "remove" && targetEntries[r.alias] ? [targetEntries[r.alias]] : [],
+    ),
+  ];
+  const removals = removalEntries(session).filter((e) => applyStates[e.alias]?.state !== "removed");
   const addedCount = pending.filter((r) => applyStates[r.alias]?.state === "added").length;
   const capacity = session?.target.capacity ?? null;
   // Swapping out an entry whose emote was deleted from 7TV takes a slot (deleted emotes don't count).
   const swapSlots = swaps.filter((r) => targetEntries[r.alias]?.emote.deleted).length;
-  const removedCount = extras.filter((e) => applyStates[e.alias]?.state === "removed" && !e.emote.deleted).length;
+  const removedCount = removalEntries(session).filter(
+    (e) => applyStates[e.alias]?.state === "removed" && !e.emote.deleted,
+  ).length;
   // Removing frees a slot unless the emote was deleted from 7TV (those never counted).
   const freedSlots = removals.filter((e) => !e.emote.deleted).length;
   const projected = (session?.targetUsed ?? 0) + addedCount + plan.length + swapSlots - removedCount - freedSlots;
@@ -605,10 +647,10 @@ export function App({ children }: { children?: React.ReactNode }) {
       if (c && (c.kind === "replace" || c.kind === "original" || c.kind === "exclude")) counts[c.kind]++;
       else if (!done) counts.undecided++; // already-added emotes don't need reviewing
     }
-    for (const e of extras) if (choices[e.alias]?.kind === "remove") counts.remove++;
+    for (const r of [...extras, ...(session?.mapped ?? [])]) if (choices[r.alias]?.kind === "remove") counts.remove++;
     for (const r of [...rows, ...extras]) if (applyStates[r.alias]?.state === "error") counts.errors++;
     return counts;
-  }, [pending, rows, extras, choices, applyStates]);
+  }, [pending, rows, extras, session, choices, applyStates]);
 
   // Closing the tab mid-run is recoverable (see the swap journal and the re-read in apply), but warn anyway.
   useEffect(() => {
@@ -662,7 +704,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     // Removals: only if the target still holds exactly the emote the user saw under that name.
     const toRemove: SetEmote[] = [];
     const goneAlready: SetEmote[] = [];
-    for (const e of s.extras.filter((x) => choiceOf(x.alias).kind === "remove")) {
+    for (const e of removalEntries(s)) {
       const now = freshByAlias.get(e.alias);
       if (!now) goneAlready.push(e);
       else if (now.emote.id === e.emote.id) toRemove.push(e);
@@ -735,7 +777,7 @@ export function App({ children }: { children?: React.ReactNode }) {
           )}
           {toRemove.length > 0 && (
             <li>
-              <b>Remove {plural(toRemove.length, "emote")}</b> your base set doesn&apos;t have:{" "}
+              <b>Remove {plural(toRemove.length, "emote")}</b> from {s.target.name}:{" "}
               {toRemove
                 .slice(0, 10)
                 .map((e) => e.alias)
@@ -902,7 +944,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     if (filter === "all") return true;
     if (filter === "errors") return applyStates[row.alias]?.state === "error";
     if (filter === "changed") return isMapped(row.alias) && isSwap(row);
-    if (filter === "remove") return isExtra(row.alias) && c?.kind === "remove";
+    if (filter === "remove") return (isExtra(row.alias) || isMapped(row.alias)) && c?.kind === "remove";
     if (isMapped(row.alias) || isExtra(row.alias)) return false;
     if (filter === "undecided") return !c;
     return c?.kind === filter;
@@ -1038,13 +1080,20 @@ export function App({ children }: { children?: React.ReactNode }) {
                 {session.mapped.length > 0 && (
                   <span className="muted">
                     {session.mapped.length} already in {targetName}
-                    {swaps.length ? ` (swapping ${swaps.length})` : ""}
+                    {(() => {
+                      const removing = session.mapped.filter((r) => choices[r.alias]?.kind === "remove").length;
+                      const parts = [swaps.length && `swapping ${swaps.length}`, removing && `removing ${removing}`];
+                      return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
+                    })()}
                   </span>
                 )}
                 {extras.length > 0 && (
                   <span className="muted">
                     {extras.length} only in {targetName}
-                    {removals.length ? ` (removing ${removals.length})` : ""}
+                    {(() => {
+                      const removing = extras.filter((e) => choices[e.alias]?.kind === "remove").length;
+                      return removing ? ` (removing ${removing})` : "";
+                    })()}
                   </span>
                 )}
                 {capacity != null && free != null && (
@@ -1297,17 +1346,17 @@ export function App({ children }: { children?: React.ReactNode }) {
               <div className="actions">
                 <Button
                   className="btn primary"
-                  isDisabled={!sourceId || !targetId || sourceId === targetId || !tags.length || loading}
+                  isDisabled={!sourceId || !targetId || sourceId === targetId || !tags.length}
+                  isPending={loading}
                   onPress={() =>
                     sourceId && targetId && void startMapping({ sourceId, targetId, theme, customTags, sortBy })
                   }
                 >
-                  {loading ? (
+                  {({ isPending }) => (
                     <>
-                      <Spinner label="Loading your sets" size="sm" /> Loading your sets…
+                      {isPending && <Spinner label="Loading your sets" size="sm" />}
+                      Start picking
                     </>
-                  ) : (
-                    "Start picking"
                   )}
                 </Button>
                 {sourceId && sourceId === targetId && (

@@ -412,3 +412,4 @@ img { color: transparent; }
 /* ---------- Field validation ---------- */
 .field-error { color: var(--err); font-size: 13px; }
 .react-aria-Input[data-invalid] { border-color: var(--err); }
+.btn[data-pending] { cursor: progress; }
