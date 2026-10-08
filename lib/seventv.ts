@@ -230,9 +230,9 @@ export interface SearchResult extends EmoteSummary {
 export async function searchEmotes(p: SearchParams, token?: string | null): Promise<{ total: number; items: SearchResult[] }> {
   type Item = EmoteSummary & { inEmoteSets: { emote: { alias: string } | null }[] };
   const d = await gql<{ emotes: { search: { totalCount: number; items: Item[] } } }>(
-    `query EmoteSearch($query: String, $tags: Tags, $sort: Sort!, $filters: Filters, $perPage: Int, $setIds: [Id!]!) {
+    `query EmoteSearch($query: String, $tags: Tags, $sort: Sort!, $filters: Filters, $perPage: Int, $setIds: [Id!]!, $withSets: Boolean!) {
       emotes { search(query: $query, tags: $tags, sort: $sort, filters: $filters, page: 1, perPage: $perPage) {
-        totalCount items { ${EMOTE_FIELDS} inEmoteSets(emoteSetIds: $setIds) { emote { alias } } }
+        totalCount items { ${EMOTE_FIELDS} inEmoteSets(emoteSetIds: $setIds) @include(if: $withSets) { emote { alias } } }
       } }
     }`,
     {
@@ -241,7 +241,9 @@ export async function searchEmotes(p: SearchParams, token?: string | null): Prom
       sort: { sortBy: p.sortBy, order: "DESCENDING" },
       filters: { exactMatch: p.exactMatch },
       perPage: p.perPage ?? 24,
-      setIds: p.targetSetId ? [p.targetSetId] : [],
+      // 7TV rejects an empty list here, so the field is left out entirely when there's no set to check.
+      setIds: p.targetSetId ? [p.targetSetId] : ["00000000000000000000000000"],
+      withSets: !!p.targetSetId,
     },
     token,
     "search",
@@ -250,25 +252,26 @@ export async function searchEmotes(p: SearchParams, token?: string | null): Prom
     total: d.emotes.search.totalCount,
     items: d.emotes.search.items.map(({ inEmoteSets, ...e }) => ({
       ...e,
-      inTarget: inEmoteSets.flatMap((s) => (s.emote ? [s.emote.alias] : [])),
+      inTarget: (inEmoteSets ?? []).flatMap((s) => (s.emote ? [s.emote.alias] : [])),
     })),
   };
 }
 
 /** Looks up one emote by ID (null if it doesn't exist). Not a search, so it doesn't use the search quota. */
-export async function fetchEmoteById(id: string, targetSetId: string, token?: string | null): Promise<SearchResult | null> {
+export async function fetchEmoteById(id: string, targetSetId?: string, token?: string | null): Promise<SearchResult | null> {
   type Item = EmoteSummary & { inEmoteSets: { emote: { alias: string } | null }[] };
   const d = await gql<{ emotes: { emote: Item | null } }>(
-    `query EmoteById($id: Id!, $setIds: [Id!]!) {
-      emotes { emote(id: $id) { ${EMOTE_FIELDS} inEmoteSets(emoteSetIds: $setIds) { emote { alias } } } }
+    `query EmoteById($id: Id!, $setIds: [Id!]!, $withSets: Boolean!) {
+      emotes { emote(id: $id) { ${EMOTE_FIELDS} inEmoteSets(emoteSetIds: $setIds) @include(if: $withSets) { emote { alias } } } }
     }`,
-    { id, setIds: [targetSetId] },
+    // 7TV rejects an empty list, so the field is skipped when there's no set to check.
+    { id, setIds: targetSetId ? [targetSetId] : ["00000000000000000000000000"], withSets: !!targetSetId },
     token,
   );
   const e = d.emotes.emote;
   if (!e) return null;
   const { inEmoteSets, ...rest } = e;
-  return { ...rest, inTarget: inEmoteSets.flatMap((s) => (s.emote ? [s.emote.alias] : [])) };
+  return { ...rest, inTarget: (inEmoteSets ?? []).flatMap((s) => (s.emote ? [s.emote.alias] : [])) };
 }
 
 export async function addEmoteToSet(

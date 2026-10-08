@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button, Form, Input, Label, Link, TextField } from "react-aria-components";
 
@@ -88,6 +89,9 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
   const [value, setValue] = useState("");
   // This component only renders client-side (the page waits for hydration), so sniffing here is safe.
   const [env] = useState(detectEnv);
+  const router = useRouter();
+  /** /demo is only prefetched when the user shows interest (hover or keyboard focus), not up front. */
+  const prefetchDemo = () => router.prefetch("/demo");
 
   const submit = (raw: string) => {
     const t = cleanToken(raw);
@@ -197,6 +201,12 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
         </p>
       )}
     </section>
+      <p className="demo-link">
+        Just looking?{" "}
+        <Link href="/demo" onHoverStart={prefetchDemo} onFocus={prefetchDemo}>
+          Try the demo
+        </Link>
+      </p>
     </>
   );
 }

@@ -396,3 +396,15 @@ img { color: transparent; }
 .manual-token { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .manual-token > .btn { align-self: center; min-width: 120px; }
 .notice-card { display: flex; gap: 12px; align-items: center; justify-content: space-between; color: var(--accent-2); font-size: 14px; }
+
+/* ---------- Demo ---------- */
+.demo-ribbon {
+  position: fixed; top: 26px; left: -52px; z-index: 40; width: 190px; padding: 5px 0;
+  transform: rotate(-45deg); text-align: center; pointer-events: none;
+  background: var(--accent); color: var(--accent-text);
+  font-size: 12px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase;
+  box-shadow: 0 4px 14px -4px rgba(0, 0, 0, 0.6);
+}
+/* Sits inside <main>, just under the last card (cards already have a 16px bottom margin). */
+.exit-demo { margin: 4px 0 0; text-align: center; font-size: 14px; color: var(--muted); }
+.demo-link { margin: 14px 0 0; text-align: center; font-size: 14px; color: var(--muted); }
