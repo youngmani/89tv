@@ -8,7 +8,7 @@ import { MappingFocus } from "@/components/MappingFocus";
 import { MappingOverview } from "@/components/MappingOverview";
 import { MappingSummary } from "@/components/MappingSummary";
 import { SetPicker } from "@/components/SetPicker";
-import { TokenGate, cleanToken } from "@/components/TokenGate";
+import { TokenGate } from "@/components/TokenGate";
 import { LoadingCard, SelectField, Spinner } from "@/components/ui";
 import {
   type ApplyState,
@@ -34,6 +34,7 @@ import {
   ApiError,
   type EmoteSetInfo,
   type EmoteSummary,
+  type SearchResult,
   type Me,
   type SetEmote,
   type SortBy,
@@ -43,10 +44,12 @@ import {
   fetchSetEmotes,
   fetchSetInfo,
   fetchSetInfos,
+  fetchEmoteById,
   friendlyError,
   isCapacityError,
   isEmoteLevelError,
   onRateLimitPause,
+  parseEmoteId,
   removeEmoteFromSet,
   searchEmotes,
   usedSlots,
@@ -110,6 +113,10 @@ export default function Home() {
   const [sets, setSets] = useState<EmoteSetInfo[]>([]);
   /** The account check and the editable-set list load as one blocking phase (nothing to do until both land). */
   const [account, setAccount] = useState<"idle" | "checking" | "loading-sets" | "ready" | "error">("idle");
+  /** Set when the user just logged in from the clipboard, so it's wiped once the token checks out. */
+  const clearClipboardAfterLogin = useRef(false);
+  /** Shown if wiping the clipboard was blocked by the browser. */
+  const [clipboardWarning, setClipboardWarning] = useState(false);
   /** Bumped by "Retry" to re-run the account check after a network failure. */
   const [accountAttempt, setAccountAttempt] = useState(0);
 
@@ -176,14 +183,8 @@ export default function Home() {
     };
   }, []);
 
-  // ---- Bootstrap: token (hash or storage) and any in-progress mapping ----
+  // ---- Bootstrap: saved token and any in-progress mapping ----
   useEffect(() => {
-    const hash = new URLSearchParams(window.location.hash.slice(1));
-    const fromHash = hash.get("token");
-    if (fromHash) {
-      save(TOKEN_KEY, cleanToken(fromHash));
-      history.replaceState(null, "", window.location.pathname + window.location.search);
-    }
     clearLegacyStorage();
     setToken(load<string | null>(TOKEN_KEY, null));
     const saved = loadMapping();
@@ -239,8 +240,16 @@ export default function Home() {
       try {
         const user = await fetchMe(token);
         if (cancelled) return;
-        if (!user) return signOut("7TV didn't accept that token. Copy it again and paste the whole thing.");
+        if (!user) return signOut("7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in.");
         save(TOKEN_KEY, token);
+        if (clearClipboardAfterLogin.current) {
+          clearClipboardAfterLogin.current = false;
+          // Overwrite the token on the clipboard so it can't be pasted on stream by accident.
+          navigator.clipboard.writeText(window.location.host).then(
+            () => setClipboardWarning(false),
+            () => setClipboardWarning(true),
+          );
+        }
         setMe(user);
         setAccount("loading-sets");
         const editable = await fetchSetInfos(user.editableEmoteSetIds, token);
@@ -249,7 +258,12 @@ export default function Home() {
         setAccount("ready");
       } catch (e) {
         if (cancelled) return;
-        if (e instanceof ApiError && e.status === 401) return signOut("Your 7TV session has expired. Grab a fresh token to keep going.");
+        if (e instanceof ApiError && e.status === 401)
+          return signOut(
+            clearClipboardAfterLogin.current
+              ? "7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in."
+              : "Your 7TV session has expired. Log in again to keep going.",
+          );
         setAuthError(friendlyError(e));
         setAccount("error");
       }
@@ -402,32 +416,49 @@ export default function Home() {
     if (!s) return Promise.reject(new Error("no session"));
     const { alias } = row;
     const o: SearchOptions = {
-      query: row.emote.defaultName,
+      input: "",
       exact: true,
       tagged: true,
       sortBy: s.params.sortBy,
       ...opts,
     };
-    const base = { ...o, items: [], total: 0, hidden: 0 };
+    // A blank box searches the emote's own (unaliased) name; an emote link or ID is looked up directly.
+    const linkedId = parseEmoteId(o.input);
+    const query = o.input.trim() || row.emote.defaultName;
+    const base = { ...o, query, items: [], total: 0, hidden: 0 };
     // Keep the previous results while loading so the tiles don't blink out; the UI dims them under a spinner.
     setSearches((prev) => ({
       ...prev,
       [alias]: { ...base, items: prev[alias]?.items ?? [], status: "loading" },
     }));
+    // The base emote is already offered as its own tile. Private and deleted emotes can't be added, so
+    // they're dropped (and counted) rather than offered.
+    const usable = (found: SearchResult[]) => {
+      const others = found.filter((e) => e.id !== row.emote.id);
+      const items = others.filter((e) => !e.deleted && !e.flags.private);
+      return { items, hidden: others.length - items.length };
+    };
     const p = searchLimit(async (): Promise<SearchState> => {
       if (sessionRef.current !== s) throw new Error("cancelled"); // don't spend quota on a stale session
+      if (linkedId) {
+        // Exact lookup first; filters don't apply to a specific emote.
+        const emote = await fetchEmoteById(linkedId, s.target.id).catch(() => null);
+        if (emote) return { ...base, status: "done", via: "link", total: 1, ...usable([emote]) };
+      }
       const res = await searchEmotes({
-        query: o.query,
+        query,
         tags: o.tagged ? s.tags : [],
         sortBy: o.sortBy,
         exactMatch: o.exact,
         targetSetId: s.target.id,
       });
-      // The original itself may carry the seasonal tag; it's already offered as "original". Private and
-      // deleted emotes can't be added, so they're dropped (and counted) rather than offered.
-      const others = res.items.filter((e) => e.id !== row.emote.id);
-      const items = others.filter((e) => !e.deleted && !e.flags.private);
-      return { ...base, status: "done", items, total: res.total, hidden: others.length - items.length };
+      return {
+        ...base,
+        status: "done",
+        via: linkedId ? "link-missing" : undefined,
+        total: res.total,
+        ...usable(res.items),
+      };
     })
       .catch((e): SearchState => ({ ...base, status: "error", error: friendlyError(e) }))
       .then((state) => {
@@ -933,9 +964,26 @@ export default function Home() {
     <main>
       {dialog}
       {header}
+      {me && clipboardWarning && (
+        <div className="card narrow notice-card" role="alert">
+          <span>
+            Your browser didn&apos;t let us clear your clipboard, so your token may still be on it. Copy something else
+            to overwrite it.
+          </span>
+          <Button className="link-button" onPress={() => setClipboardWarning(false)}>
+            Dismiss
+          </Button>
+        </div>
+      )}
 
       {!token ? (
-        <TokenGate onToken={setToken} error={authError} />
+        <TokenGate
+          onToken={(t) => {
+            clearClipboardAfterLogin.current = true;
+            setToken(t);
+          }}
+          error={authError}
+        />
       ) : account === "error" ? (
         <section className="card narrow center" role="alert">
           <p>{me ? "Couldn't load your emote sets." : "Couldn't check your 7TV session."}</p>

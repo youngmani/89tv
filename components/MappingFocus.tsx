@@ -122,7 +122,8 @@ export function MappingFocus({
   onNavigate: (delta: number) => void;
 }) {
   const [opts, setOpts] = useState<SearchOptions>({
-    query: search?.query ?? source.emote.defaultName,
+    // Blank until the user types: an empty box still searches the emote's own name.
+    input: search?.input ?? "",
     exact: search?.exact ?? true,
     tagged: search?.tagged ?? true,
     sortBy: search?.sortBy ?? defaultSort,
@@ -131,7 +132,7 @@ export function MappingFocus({
   const update = (patch: Partial<SearchOptions>, run: boolean) => {
     const next = { ...opts, ...patch };
     setOpts(next);
-    if (run) onSearch({ ...next, query: next.query.trim() || source.emote.defaultName });
+    if (run) onSearch(next);
   };
 
   const mapped = !!inTarget;
@@ -204,8 +205,13 @@ export function MappingFocus({
         }}
       >
         <div className="search-row">
-          <TextField className="field grow" value={opts.query} onChange={(query) => update({ query }, false)} aria-label="Search query">
-            <Input />
+          <TextField
+            className="field grow"
+            value={opts.input}
+            onChange={(input) => update({ input }, false)}
+            aria-label="Search, or paste an emote link"
+          >
+            <Input placeholder="Search, or paste an emote link" />
           </TextField>
           <Button type="submit" className="btn">
             Search
@@ -301,13 +307,25 @@ export function MappingFocus({
           </>
         ) : (
           <>
-            {search.total} result{search.total === 1 ? "" : "s"} for “{search.query}”
-            {search.hidden > 0 && ` · hiding ${search.hidden} private or deleted`}
-            {items.length === 0 &&
+            {search.via === "link" ? (
+              items.length
+                ? "Found the emote from that link"
+                : search.hidden
+                  ? "That emote is private or deleted, so it can't be added"
+                  : "That link is the emote that's already here"
+            ) : (
+              <>
+                {search.via === "link-missing" && "No emote with that ID, so this is a regular search: "}
+                {search.total} result{search.total === 1 ? "" : "s"} for “{search.query}”
+              </>
+            )}
+            {search.via !== "link" && search.hidden > 0 && ` · hiding ${search.hidden} private or deleted`}
+            {search.via !== "link" &&
+              items.length === 0 &&
               (mapped
                 ? " — no other versions to swap in."
                 : " — no seasonal version, so the base emote will be copied.")}
-            {search.exact && (
+            {search.via !== "link" && search.exact && (
               <>
                 {" · "}
                 <Button className="link-button" onPress={() => update({ exact: false }, true)}>
@@ -315,7 +333,7 @@ export function MappingFocus({
                 </Button>
               </>
             )}
-            {search.tagged && (
+            {search.via !== "link" && search.tagged && (
               <>
                 {" · "}
                 <Button className="link-button" onPress={() => update({ tagged: false }, true)}>

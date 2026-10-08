@@ -31,7 +31,7 @@ The v4 schema is introspectable, so you can browse it at `https://api.7tv.app/v4
 
 ### Login
 
-7TV's OAuth `redirect_uri` is fixed to `https://7tv.app/login/callback`, and an absolute `return_to` is refused (`return_to origin mismatch`). The PKCE verifier is also an `HttpOnly; SameSite=Strict` cookie on `api.7tv.app`. Because of all this, a third-party site can't finish the login itself. The app asks for your existing 7tv.app session token instead: in the DevTools console on 7tv.app, run `copy(localStorage.getItem("7tv-token"))` and paste the result. The token is kept in this app's `localStorage` and is only ever sent to `api.7tv.app`.
+7TV's OAuth `redirect_uri` is fixed to `https://7tv.app/login/callback`, and an absolute `return_to` is refused (`return_to origin mismatch`). The PKCE verifier is also an `HttpOnly; SameSite=Strict` cookie on `api.7tv.app`. Because of all this, a third-party site can't finish the login itself. The app asks for your existing 7tv.app session token instead: in the DevTools console on 7tv.app, run `copy(localStorage.getItem("7tv-token"))` (it copies the token without printing it), then press **Paste and log in**. The token is never displayed: it's read straight from the clipboard, checked to be a 7TV token (a JWT) before anything is sent, and the clipboard is overwritten after a successful login, so it's safe to do on stream. If the browser blocks clipboard reads, a masked field is shown instead. The token is kept in this app's `localStorage` and is only ever sent to `api.7tv.app`.
 
 ## Develop
 

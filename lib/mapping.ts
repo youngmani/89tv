@@ -15,7 +15,8 @@ export type Choice =
 
 /** Options for one emote search; each emote can tweak these independently. */
 export interface SearchOptions {
-  query: string;
+  /** What's in the search box. Blank means "the emote's own name"; an emote link or ID is looked up directly. */
+  input: string;
   exact: boolean;
   /** Restrict to the theme's tags. Off searches every emote with that name. */
   tagged: boolean;
@@ -24,6 +25,13 @@ export interface SearchOptions {
 
 export interface SearchState extends SearchOptions {
   status: "loading" | "done" | "error";
+  /** The text actually searched for (the emote's name when the box was blank). */
+  query: string;
+  /**
+   * "link": the box held an emote link/ID and that emote was found directly.
+   * "link-missing": it held one, but no such emote exists, so a normal search ran instead.
+   */
+  via?: "link" | "link-missing";
   items: SearchResult[];
   total: number;
   /** Results dropped because they can't be added (private or deleted). */

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Form, Label, Link, TextArea, TextField } from "react-aria-components";
+import { Button, Form, Input, Label, Link, TextField } from "react-aria-components";
 
-// Copies the token and also prints it, in case copy() is unavailable or the clipboard write is blocked.
-const SNIPPET = `(t => (copy(t), t))(localStorage.getItem("7tv-token"))`;
+// Copies the token without printing it: copy() returns undefined, so the console only shows "undefined".
+// Pasting the whole line at once also avoids DevTools' eager-evaluation preview, which would show the
+// token if `localStorage.getItem(...)` were typed on its own.
+const SNIPPET = `copy(localStorage.getItem("7tv-token"))`;
 
 /**
  * Tokens are JWTs (base64url segments joined by dots), so whitespace and quotes are never part of one.
@@ -16,6 +18,14 @@ export function cleanToken(raw: string): string {
     .replace(/^["'`]?\s*bearer\s+/i, "")
     .replace(/[\s"'`]/g, "");
 }
+
+/**
+ * 7TV session tokens are HS256 JWTs (apps/api/src/jwt.rs): three base64url segments, and the first two are
+ * JSON objects, so they start with "eyJ". Anything else on the clipboard (a chat message, a link…) is
+ * rejected here and never sent anywhere.
+ */
+export const looksLikeToken = (t: string) =>
+  t.length <= 4096 && /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(t);
 
 type Env = { mobile: boolean; mac: boolean; browser: "chromium" | "firefox" | "safari" };
 
@@ -68,13 +78,48 @@ function OpenConsoleStep({ env }: { env: Env }) {
 
 // 7TV's OAuth callback is pinned to https://7tv.app/login/callback, so a third-party site can't finish
 // the login flow itself. Instead the user copies their existing 7tv.app session token.
+// The token is never displayed: it's read straight from the clipboard (or typed into a masked field), and
+// no message ever echoes what was pasted. That way streamers can log in on stream.
 export function TokenGate({ onToken, error }: { onToken: (t: string) => void; error?: string | null }) {
-  const [value, setValue] = useState("");
   const [copied, setCopied] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  /** Shown only when the browser won't let us read the clipboard. */
+  const [manual, setManual] = useState(false);
+  const [value, setValue] = useState("");
   // This component only renders client-side (the page waits for hydration), so sniffing here is safe.
   const [env] = useState(detectEnv);
 
+  const submit = (raw: string) => {
+    const t = cleanToken(raw);
+    if (!looksLikeToken(t)) {
+      // Deliberately vague: never repeat clipboard contents back.
+      setProblem("That doesn't look like a 7TV token. Run the command on 7tv.app again, then try once more.");
+      return;
+    }
+    setProblem(null);
+    setValue("");
+    onToken(t);
+  };
+
+  const pasteAndLogIn = async () => {
+    try {
+      submit(await navigator.clipboard.readText());
+    } catch {
+      setManual(true);
+      setProblem("Your browser didn't let us read the clipboard. Paste the token into the box instead; it stays hidden.");
+    }
+  };
+
   return (
+    <>
+      {env.mobile && (
+        <div className="card narrow notice-card" role="note">
+          <span>
+            Mobile browsers don&apos;t have a developer console, so you can&apos;t get your token on this device. Open
+            89TV on a computer instead. If your token is already on your clipboard, press the button below.
+          </span>
+        </div>
+      )}
     <section className="card narrow">
       <h2>Connect your 7TV account</h2>
       <p className="muted">
@@ -82,14 +127,8 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
         in your browser and is only ever sent to <code>api.7tv.app</code>.
       </p>
 
-      {env.mobile && (
-        <p className="notice">
-          Mobile browsers don&apos;t have a developer console, so you can&apos;t get your token on this device. Open 89TV
-          on a computer instead. If you already have your token, you can paste it below.
-        </p>
-      )}
 
-      <ol className="steps" hidden={env.mobile}>
+      <ol className="steps">
         <li>
           Open{" "}
           <Link href="https://7tv.app" target="_blank" rel="noreferrer">
@@ -101,7 +140,7 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
           <OpenConsoleStep env={env} />
         </li>
         <li>
-          Run this. It copies the token to your clipboard and also prints it:
+          Paste this into the Console and press Enter. It copies your token without showing it:
           <div className="snippet">
             <code>{SNIPPET}</code>
             <Button
@@ -125,25 +164,39 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
             </span>
           )}
         </li>
-        <li>Paste the token below.</li>
+        <li>Come back here and press the button.</li>
       </ol>
 
-      <Form
-        onSubmit={(e) => {
-          e.preventDefault();
-          const t = cleanToken(value);
-          if (t) onToken(t);
-        }}
-      >
-        <TextField className="field" value={value} onChange={setValue}>
-          <Label>7TV token</Label>
-          <TextArea rows={3} placeholder="eyJhbGciOi…" spellCheck={false} autoComplete="off" />
-        </TextField>
-        <Button type="submit" className="btn primary" isDisabled={!value.trim()}>
-          Connect
+      <div className="buttons-row">
+        <Button className="btn primary" onPress={pasteAndLogIn}>
+          Paste and log in
         </Button>
-      </Form>
-      {error && <p className="error">{error}</p>}
+      </div>
+
+      {manual && (
+        <Form
+          className="manual-token"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit(value);
+          }}
+        >
+          <TextField className="field" value={value} onChange={setValue} type="password">
+            <Label>7TV token (hidden)</Label>
+            <Input autoComplete="off" spellCheck={false} />
+          </TextField>
+          <Button type="submit" className="btn" isDisabled={!value.trim()}>
+            Log in
+          </Button>
+        </Form>
+      )}
+
+      {(problem || error) && (
+        <p className="error center" role="alert">
+          {problem ?? error}
+        </p>
+      )}
     </section>
+    </>
   );
 }

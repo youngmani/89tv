@@ -137,6 +137,17 @@ export const emoteImage = (id: string, size: 1 | 2 | 3 | 4 = 2) => `https://cdn.
 export const emotePage = (id: string) => `https://7tv.app/emotes/${id}`;
 export const ownerName = (o: { owner: EmoteSummary["owner"] }) => o.owner?.mainConnection?.platformDisplayName ?? "unknown";
 
+/**
+ * An emote ID from what the user typed: a bare ID, or a link containing one (7tv.app/emotes/<id>,
+ * cdn.7tv.app/emote/<id>/2x.webp, …). Plain search text never matches.
+ */
+export function parseEmoteId(input: string): string | null {
+  const t = input.trim();
+  const bare = t.match(/^([0-9A-HJKMNP-TV-Z]{26})$/i);
+  const link = t.match(/\/emotes?\/([0-9A-HJKMNP-TV-Z]{26})(?![0-9A-Z])/i);
+  return (bare?.[1] ?? link?.[1])?.toUpperCase() ?? null;
+}
+
 /** Accepts a raw set ID or any 7tv URL containing one. */
 export function parseSetId(input: string): string | null {
   const m = input.trim().match(/\b([0-9A-HJKMNP-TV-Z]{26}|[0-9a-f]{24})\b/i);
@@ -244,6 +255,22 @@ export async function searchEmotes(p: SearchParams, token?: string | null): Prom
   };
 }
 
+/** Looks up one emote by ID (null if it doesn't exist). Not a search, so it doesn't use the search quota. */
+export async function fetchEmoteById(id: string, targetSetId: string, token?: string | null): Promise<SearchResult | null> {
+  type Item = EmoteSummary & { inEmoteSets: { emote: { alias: string } | null }[] };
+  const d = await gql<{ emotes: { emote: Item | null } }>(
+    `query EmoteById($id: Id!, $setIds: [Id!]!) {
+      emotes { emote(id: $id) { ${EMOTE_FIELDS} inEmoteSets(emoteSetIds: $setIds) { emote { alias } } } }
+    }`,
+    { id, setIds: [targetSetId] },
+    token,
+  );
+  const e = d.emotes.emote;
+  if (!e) return null;
+  const { inEmoteSets, ...rest } = e;
+  return { ...rest, inTarget: inEmoteSets.flatMap((s) => (s.emote ? [s.emote.alias] : [])) };
+}
+
 export async function addEmoteToSet(
   token: string,
   setId: string,
@@ -290,7 +317,7 @@ export function friendlyError(e: unknown): string {
   if (/emote is private/i.test(msg)) return "This emote is private, so it can't be added. Pick a different one.";
   if (/emote not found/i.test(msg)) return "This emote has been deleted from 7TV. Pick a different one.";
   if (/emote set not found/i.test(msg)) return "Your seasonal set no longer exists.";
-  if (code === "UNAUTHORIZED" || code === "LOGIN_REQUIRED") return "Your 7TV session expired. Grab a fresh token to keep going.";
+  if (code === "UNAUTHORIZED" || code === "LOGIN_REQUIRED") return "Your 7TV session expired. Log in again to keep going.";
   if (code === "LACKING_PRIVILEGES" || (e instanceof ApiError && e.status === 403))
     return "You can't edit your seasonal set anymore.";
   if (code === "RATE_LIMIT_EXCEEDED") return "7TV asked us to slow down. Wait a moment and try again.";
