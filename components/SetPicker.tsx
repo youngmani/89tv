@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Input, Label, TextField } from "react-aria-components";
+import { FieldError, Input, Label, TextField } from "react-aria-components";
 import { SelectField } from "@/components/ui";
 import { type EmoteSetInfo, parseSetId } from "@/lib/seventv";
 
@@ -25,6 +25,7 @@ export function SetPicker({
   onChange,
   allowCustom,
   disabledId,
+  linkError,
 }: {
   label: string;
   description?: string;
@@ -33,6 +34,8 @@ export function SetPicker({
   onChange: (id: string | null) => void;
   allowCustom?: boolean;
   disabledId?: string | null;
+  /** A problem found when the pasted link was checked with 7TV (only happens on submit). */
+  linkError?: string | null;
 }) {
   const [customChosen, setCustomChosen] = useState(false);
   const [text, setText] = useState<string | null>(null);
@@ -40,6 +43,17 @@ export function SetPicker({
   // the list is in.
   const inList = !!value && sets.some((s) => s.id === value);
   const custom = !!allowCustom && (customChosen || (!!value && sets.length > 0 && !inList));
+
+  // The link field's own checks are local (no request): "required" and "looks like a set link". They only
+  // show once the field has been visited and left, so nothing is flagged while someone is still typing.
+  const [touched, setTouched] = useState(false);
+  const raw = text ?? value ?? "";
+  const localError = !raw.trim()
+    ? "Paste a link to an emote set."
+    : parseSetId(raw)
+      ? null
+      : "That isn't an emote set link. It should look like https://7tv.app/emote-sets/01H…";
+  const error = (touched ? localError : null) ?? linkError ?? null;
 
   const items = sets.map((s) => ({ id: s.id, label: setLabel(s), isDisabled: s.id === disabledId }));
   if (allowCustom) items.push({ id: CUSTOM, label: "Any other set (paste a link)…", isDisabled: false });
@@ -65,14 +79,20 @@ export function SetPicker({
       {custom && (
         <TextField
           className="field"
-          value={text ?? value ?? ""}
+          value={raw}
           onChange={(v) => {
             setText(v);
             onChange(parseSetId(v));
           }}
+          onBlur={() => setTouched(true)}
+          isInvalid={!!error}
+          validationBehavior="aria"
+          // Focus it when the user picks "Any other set", not when a saved choice is restored.
+          autoFocus={customChosen}
         >
           <Label className="visually-hidden">Emote set link or ID</Label>
           <Input placeholder="https://7tv.app/emote-sets/01H…" />
+          <FieldError className="field-error">{error}</FieldError>
         </TextField>
       )}
     </div>

@@ -126,6 +126,8 @@ export function App({ children }: { children?: React.ReactNode }) {
   /** Re-reading the target before the confirm dialog; the apply buttons show a spinner meanwhile. */
   const [preparing, setPreparing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  /** The pasted base-set link didn't resolve when checked on submit; shown on the link field itself. */
+  const [sourceLinkError, setSourceLinkError] = useState<string | null>(null);
   const [completed, setCompleted] = useState<{
     added: number;
     swapped: number;
@@ -277,6 +279,17 @@ export function App({ children }: { children?: React.ReactNode }) {
       if (!token || !me) return;
       setLoading(true);
       setLoadError(null);
+      setSourceLinkError(null);
+      // A pasted link (not one of the user's own sets) is only checked with 7TV now, on submit.
+      const pastedSource = !sets.some((x) => x.id === params.sourceId) && !saved;
+      if (pastedSource) {
+        const found = await api.fetchSetInfo(params.sourceId, token).catch(() => null);
+        if (!found) {
+          setSourceLinkError("No emote set found at that link. Check it and try again.");
+          setLoading(false);
+          return;
+        }
+      }
       setCompleted(null);
       try {
         const [source, target, sourceEmotes, targetEmotes] = await Promise.all([
@@ -348,7 +361,7 @@ export function App({ children }: { children?: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [token, me, resetSession, api],
+    [token, me, resetSession, api, sets],
   );
 
   // Resume the saved mapping as soon as we know who the user is.
@@ -943,15 +956,14 @@ export function App({ children }: { children?: React.ReactNode }) {
         89TV
       </h1>
       <p className="tagline">Make a seasonal copy of your 7TV emote set</p>
-      {me && (
+      {/* The demo's account is fake, so there's no user (or Sign out) to show. */}
+      {me && mode === "live" && (
         <div className="me">
           {me.mainConnection?.platformAvatarUrl && <img src={me.mainConnection.platformAvatarUrl} alt="" />}
           <span>{me.mainConnection?.platformDisplayName ?? me.id}</span>
-          {mode === "live" && (
-            <Button className="link-button" onPress={() => signOut()}>
-              Sign out
-            </Button>
-          )}
+          <Button className="link-button" onPress={() => signOut()}>
+            Sign out
+          </Button>
         </div>
       )}
     </header>
@@ -1246,11 +1258,15 @@ export function App({ children }: { children?: React.ReactNode }) {
                 description="Your regular emote set"
                 sets={sets}
                 value={sourceId}
-                onChange={setSourceId}
+                onChange={(id) => {
+                  setSourceId(id);
+                  setSourceLinkError(null);
+                }}
                 allowCustom
+                linkError={sourceLinkError}
               />
               <SetPicker
-                label="Seasonal set"
+                label="Target set"
                 description="Where to add the seasonal emotes"
                 sets={sets}
                 value={targetId}

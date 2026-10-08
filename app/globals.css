@@ -408,3 +408,7 @@ img { color: transparent; }
 /* Sits inside <main>, just under the last card (cards already have a 16px bottom margin). */
 .exit-demo { margin: 4px 0 0; text-align: center; font-size: 14px; color: var(--muted); }
 .demo-link { margin: 14px 0 0; text-align: center; font-size: 14px; color: var(--muted); }
+
+/* ---------- Field validation ---------- */
+.field-error { color: var(--err); font-size: 13px; }
+.react-aria-Input[data-invalid] { border-color: var(--err); }
