@@ -264,6 +264,7 @@ img { color: transparent; }
 .focus-images { display: flex; align-items: center; gap: 10px; max-width: 100%; }
 .focus-images img { min-width: 0; flex: 0 1 96px; }
 .focus-images .arrow { color: var(--muted); font-size: 20px; flex: none; }
+.focus-title .replacing img { display: inline-block; width: 18px; height: 18px; vertical-align: -4px; }
 .focus-title .alias { font-size: 26px; font-weight: 750; word-break: break-all; }
 .search { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 560px; }
 .search-row { display: flex; gap: 8px; width: 100%; }

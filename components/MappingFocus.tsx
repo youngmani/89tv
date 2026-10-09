@@ -169,6 +169,9 @@ export function MappingFocus({
   const result =
     choice.kind === "replace" ? choice.emote : choice.kind === "keep" ? current : choice.kind === "original" ? source.emote : undefined;
   const changed = result && result.id !== source.emote.id ? result : undefined;
+  // A swap's third emote: what the seasonal set holds now and is about to lose. Named in the subtitle, small,
+  // so the header stays "base → new".
+  const replacing = current && result && result.id !== current.id ? current : undefined;
   const keepsCurrent = mapped && (choice.kind === "keep" || (choice.kind === "original" && current?.id === source.emote.id));
 
   return (
@@ -201,7 +204,17 @@ export function MappingFocus({
           <div className="muted small">
             {aliased ? <>7TV name: {source.emote.defaultName} · </> : null}
             {source.flags.zeroWidth ? "zero-width · " : ""}
-            {!inBase ? "only in your seasonal set · " : mapped ? "already added · " : ""}
+            {replacing ? (
+              <span className="replacing">
+                replacing <img src={emoteImage(replacing.id, 1)} alt="" /> {replacing.defaultName} ·{" "}
+              </span>
+            ) : !inBase ? (
+              "only in your seasonal set · "
+            ) : mapped ? (
+              "already added · "
+            ) : (
+              ""
+            )}
             {position}
             {decided ? " · picked" : ""}
           </div>
