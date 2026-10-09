@@ -305,16 +305,7 @@ export function MappingFocus({
             note="taken out by an unfinished swap"
           />
         )}
-        {mapped && current && (
-          <Tile
-            emote={current}
-            selected={keepsCurrent}
-            onSelect={() => onChoose({ kind: "keep" }, true)}
-            badge={current.deleted ? "current (deleted)" : "current"}
-            zeroWidth={inTarget?.flags.zeroWidth}
-            hotkey="0"
-          />
-        )}
+        {/* Base before current, in the same order as the header's "base → current". */}
         {inBase && (!mapped || current?.id !== source.emote.id) && (
           <Tile
             emote={source.emote}
@@ -323,6 +314,16 @@ export function MappingFocus({
             badge="base"
             zeroWidth={source.flags.zeroWidth}
             hotkey={mapped ? undefined : "0"}
+          />
+        )}
+        {mapped && current && (
+          <Tile
+            emote={current}
+            selected={keepsCurrent}
+            onSelect={() => onChoose({ kind: "keep" }, true)}
+            badge={current.deleted ? "current (deleted)" : "current"}
+            zeroWidth={inTarget?.flags.zeroWidth}
+            hotkey="0"
           />
         )}
         {chosen && chosenMissing && <Tile emote={chosen} selected onSelect={() => onChoose(choice, true)} badge="chosen" />}
