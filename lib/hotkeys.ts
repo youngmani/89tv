@@ -12,7 +12,9 @@ export function shouldIgnoreKey(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
   if (e.metaKey || e.ctrlKey || e.altKey || !t?.closest) return true;
   if (document.querySelector(OVERLAY)) return true;
-  if (t.closest("input, textarea, [role=tab]")) return true;
-  if ((e.key === "Enter" || e.key === " ") && t.closest("button, a, [role=button], [role=option]")) return true;
+  if (t.closest("input, textarea")) return true;
+  // Tabs use the arrow keys (and Home/End) to move between tabs; everything else is free for shortcuts.
+  if (/^(Arrow|Home$|End$)/.test(e.key) && t.closest("[role=tab]")) return true;
+  if ((e.key === "Enter" || e.key === " ") && t.closest("button, a, [role=button], [role=option], [role=tab]")) return true;
   return false;
 }
