@@ -115,7 +115,7 @@ img { color: transparent; }
 .top h1 { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.02em; }
 /* The 9 tucks into the 8. Letter-spacing (only after the 8, so "TV" keeps the heading's spacing) rather than a
    margin, so a text selection stays one continuous highlight. */
-.wordmark .eight { letter-spacing: -0.15em; }
+.wordmark .eight { letter-spacing: -0.125em; }
 .wordmark .nine { color: var(--accent); transition: color 0.5s; }
 .top .logo { display: inline-block; transform: translateY(-1px); }
 .tagline { margin: 0; color: var(--muted); }
