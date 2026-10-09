@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Button, Checkbox, Form, Input, Link, TextField, ToggleButton } from "react-aria-components";
 import { ErrorText, SelectField, Spinner } from "@/components/ui";
+import { shouldIgnoreKey } from "@/lib/hotkeys";
 import {
   type ApplyState,
   type Choice,
@@ -63,15 +64,6 @@ function Tile({
       </Link>
     </div>
   );
-}
-
-/** Shortcuts are ignored while typing, and Enter/Space are left alone on interactive elements. */
-function shouldIgnoreKey(e: KeyboardEvent) {
-  const t = e.target as HTMLElement | null;
-  if (e.metaKey || e.ctrlKey || e.altKey || !t?.closest) return true;
-  if (t.closest("input, textarea, [role=listbox], [role=dialog], [role=tab]")) return true;
-  if ((e.key === "Enter" || e.key === " ") && t.closest("button, a, [role=button], [role=option]")) return true;
-  return false;
 }
 
 /**

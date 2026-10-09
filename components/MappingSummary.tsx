@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Button } from "react-aria-components";
+import { shouldIgnoreKey } from "@/lib/hotkeys";
 import type { Section } from "@/lib/steps";
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
@@ -10,9 +11,7 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 function useArrowKeys(canPrev: boolean, canNext: boolean, onNavigate: (delta: number) => void) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement | null;
-      if (e.metaKey || e.ctrlKey || e.altKey || t?.closest?.("input, textarea, [role=listbox], [role=dialog], [role=tab]"))
-        return;
+      if (shouldIgnoreKey(e)) return;
       if (e.key === "ArrowLeft" && canPrev) onNavigate(-1);
       else if (e.key === "ArrowRight" && canNext) onNavigate(1);
       else return;
