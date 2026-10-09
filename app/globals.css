@@ -98,6 +98,10 @@ kbd {
   border-radius: 4px; background: var(--panel-2); color: var(--muted);
 }
 img { color: transparent; }
+/* Placeholder pulse for <Image> until it loads. */
+.img-loading { background-color: var(--border); animation: img-loading 1.5s infinite ease-in-out; }
+@keyframes img-loading { 0%, 60%, 100% { opacity: 0.5; } 30% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .img-loading { animation: none; } }
 
 .muted { color: var(--muted); }
 .small { font-size: 13px; }

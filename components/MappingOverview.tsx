@@ -2,6 +2,7 @@
 
 import { memo } from "react";
 import { Button } from "react-aria-components";
+import { Image } from "@/components/Image";
 import { type ApplyState, type Choice, KEEP, ORIGINAL, type Outcome, outcome } from "@/lib/mapping";
 import { type SetEmote, emoteImage, ownerName } from "@/lib/seventv";
 
@@ -81,13 +82,13 @@ function MappingOverviewImpl({
                       aria-label={`${row.alias}: ${describe(row, c, o, a, !!section.extra)}`}
                       aria-current={index === current ? "step" : undefined}
                     >
-                      <img src={emoteImage(row.emote.id, 1)} alt="" loading="lazy" />
+                      <Image src={emoteImage(row.emote.id, 1)} alt="" loading="lazy" index={index} />
                       {!end ? (
                         <span className="arrow">✗</span>
                       ) : end.id !== row.emote.id ? (
                         <>
                           <span className="arrow">→</span>
-                          <img src={emoteImage(end.id, 1)} alt="" loading="lazy" />
+                          <Image src={emoteImage(end.id, 1)} alt="" loading="lazy" index={index} />
                         </>
                       ) : null}
                       <span className="chip-name">{row.alias}</span>

@@ -14,6 +14,7 @@ import {
   TextField,
 } from "react-aria-components";
 import { type DialogOptions, DialogContent, ModalShell, useDialog } from "@/components/Dialog";
+import { Image } from "@/components/Image";
 import { MappingFocus } from "@/components/MappingFocus";
 import { MappingOverview } from "@/components/MappingOverview";
 import { MappingSummary } from "@/components/MappingSummary";
@@ -1123,7 +1124,7 @@ export function App({ children }: { children?: React.ReactNode }) {
       {/* The demo's account is fake, so there's no user (or Sign out) to show. */}
       {me && mode === "live" && (
         <div className="me">
-          {me.mainConnection?.platformAvatarUrl && <img src={me.mainConnection.platformAvatarUrl} alt="" />}
+          {me.mainConnection?.platformAvatarUrl && <Image src={me.mainConnection.platformAvatarUrl} alt="" />}
           <span>{me.mainConnection?.platformDisplayName ?? me.id}</span>
           <Button className="link-button" onPress={() => signOut()}>
             Sign out

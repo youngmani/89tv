@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button, Checkbox, Form, Input, Link, TextField, ToggleButton } from "react-aria-components";
+import { Image } from "@/components/Image";
 import { ErrorText, SelectField, Spinner } from "@/components/ui";
 import { shouldIgnoreKey } from "@/lib/hotkeys";
 import {
@@ -24,6 +25,7 @@ function Tile({
   hotkey,
   note,
   isDisabled,
+  index,
 }: {
   emote: EmoteSummary;
   selected: boolean;
@@ -33,6 +35,8 @@ function Tile({
   hotkey?: string;
   /** Extra context shown under the owner, e.g. "in target as foo". */
   note?: string;
+  /** Position in the grid, to stagger the loading placeholder. */
+  index?: number;
 }) {
   return (
     <div className="tile-wrap">
@@ -44,7 +48,7 @@ function Tile({
         aria-label={`${badge ? `${badge}: ` : ""}${emote.defaultName} by ${ownerName(emote)}${note ? `, ${note}` : ""}`}
       >
         {badge && <span className="badge">{badge}</span>}
-        <img src={emoteImage(emote.id, 3)} alt="" />
+        <Image src={emoteImage(emote.id, 3)} alt="" index={index} />
         <span className="name">{emote.defaultName}</span>
         <span className="owner">{ownerName(emote)}</span>
         {note && <span className="note">{note}</span>}
@@ -184,14 +188,14 @@ export function MappingFocus({
         <div className="focus-title">
           {changed ? (
             <div className="focus-images" role="img" aria-label={`${source.emote.defaultName} → ${changed.defaultName}`}>
-              <img src={emoteImage(source.emote.id, 3)} alt="" />
+              <Image src={emoteImage(source.emote.id, 3)} alt="" />
               <span className="arrow" aria-hidden>
                 →
               </span>
-              <img src={emoteImage(changed.id, 3)} alt="" />
+              <Image src={emoteImage(changed.id, 3)} alt="" />
             </div>
           ) : (
-            <img src={emoteImage(source.emote.id, 3)} alt="" />
+            <Image src={emoteImage(source.emote.id, 3)} alt="" />
           )}
           <div className={`alias${choice.kind === "remove" || choice.kind === "exclude" ? " struck" : ""}`}>
             {source.alias}
@@ -201,7 +205,7 @@ export function MappingFocus({
             {source.flags.zeroWidth ? "zero-width · " : ""}
             {replacing ? (
               <span className="replacing">
-                replacing <img src={emoteImage(replacing.id, 1)} alt="" /> {replacing.defaultName} ·{" "}
+                replacing <Image src={emoteImage(replacing.id, 1)} alt="" /> {replacing.defaultName} ·{" "}
               </span>
             ) : !inBase ? (
               "only in your seasonal set · "
@@ -317,6 +321,7 @@ export function MappingFocus({
             onSelect={() => onChoose({ kind: "replace", emote: e }, true)}
             isDisabled={loading}
             hotkey={i < 9 ? String(i + 1) : undefined}
+            index={i}
             note={e.inTarget.length ? `in your seasonal set as ${e.inTarget.join(", ")}` : undefined}
           />
         ))}
