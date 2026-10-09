@@ -160,6 +160,11 @@ export function MappingFocus({
   const aliased = source.alias !== source.emote.defaultName;
   const chosen = choice.kind === "replace" ? choice.emote : null;
   const chosenMissing = chosen && !items.some((e) => e.id === chosen.id);
+  // What the seasonal set ends up with, shown next to the original when it's a different emote (like the
+  // overview chips). Nothing when it's skipped or removed: the struck-through name says that.
+  const result =
+    choice.kind === "replace" ? choice.emote : choice.kind === "keep" ? current : choice.kind === "original" ? source.emote : undefined;
+  const changed = result && result.id !== source.emote.id ? result : undefined;
   const keepsCurrent = mapped && (choice.kind === "keep" || (choice.kind === "original" && current?.id === source.emote.id));
 
   return (
@@ -175,7 +180,17 @@ export function MappingFocus({
           ←
         </Button>
         <div className="focus-title">
-          <img src={emoteImage(source.emote.id, 3)} alt="" />
+          {changed ? (
+            <div className="focus-images" role="img" aria-label={`${source.emote.defaultName} → ${changed.defaultName}`}>
+              <img src={emoteImage(source.emote.id, 3)} alt="" />
+              <span className="arrow" aria-hidden>
+                →
+              </span>
+              <img src={emoteImage(changed.id, 3)} alt="" />
+            </div>
+          ) : (
+            <img src={emoteImage(source.emote.id, 3)} alt="" />
+          )}
           <div className={`alias${choice.kind === "remove" || choice.kind === "exclude" ? " struck" : ""}`}>
             {source.alias}
           </div>
