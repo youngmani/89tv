@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button, Checkbox, Form, Input, Link, TextField, ToggleButton } from "react-aria-components";
-import { SelectField, Spinner } from "@/components/ui";
+import { ErrorText, SelectField, Spinner } from "@/components/ui";
 import {
   type ApplyState,
   type Choice,
@@ -274,7 +274,7 @@ export function MappingFocus({
 
       {apply?.state === "error" && (
         <div className="alert" role="alert">
-          <b>Failed:</b> {apply.message}
+          <b>Failed:</b> <ErrorText message={apply.message ?? ""} />
         </div>
       )}
       {apply?.state === "added" && <div className="ok small">✓ Added</div>}
@@ -333,7 +333,9 @@ export function MappingFocus({
           "Searching…"
         ) : search.status === "error" ? (
           <>
-            <span className="error">Couldn&apos;t search: {search.error}</span>{" "}
+            <span className="error">
+              Couldn&apos;t search: <ErrorText message={search.error ?? ""} />
+            </span>{" "}
             <Button className="link-button" onPress={() => onSearch(search)}>
               Retry
             </Button>

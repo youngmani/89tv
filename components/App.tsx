@@ -22,7 +22,7 @@ import { MappingOverview } from "@/components/MappingOverview";
 import { MappingSummary } from "@/components/MappingSummary";
 import { SetPicker } from "@/components/SetPicker";
 import { TokenGate } from "@/components/TokenGate";
-import { LoadingCard, SelectField, Spinner } from "@/components/ui";
+import { ErrorText, LoadingCard, LogInAgainContext, SelectField, Spinner } from "@/components/ui";
 import {
   type ApplyState,
   type Choice,
@@ -268,9 +268,18 @@ export function App({ children }: { children?: React.ReactNode }) {
       setAccount("idle");
       resetSession();
       setAuthError(reason ?? null);
+      // The in-progress mapping stays saved; pick it up again once the user is logged back in.
+      setResume(storage.mapping.get());
+      setLoadError(null);
     },
     [resetSession, storage],
   );
+  /** "Log in" in an expired-session error: closes the save modal if it's open, then back to the login screen. */
+  const logInAgain = useCallback(() => {
+    saveAnswer.current?.(false);
+    saveAnswer.current = null;
+    signOut();
+  }, [signOut]);
 
   useEffect(() => {
     if (!token) return;
@@ -717,7 +726,7 @@ export function App({ children }: { children?: React.ReactNode }) {
         freshCapacity = info.capacity;
       } catch (e) {
         setPreparing(false);
-        await saveStep({ title: `Couldn't check ${s.target.name}`, body: friendlyError(e) });
+        await saveStep({ title: `Couldn't check ${s.target.name}`, body: <ErrorText message={friendlyError(e)} /> });
         return;
       }
       setPreparing(false);
@@ -941,7 +950,12 @@ export function App({ children }: { children?: React.ReactNode }) {
       } else if (fatal) {
         await saveStep({
           title: "Stopped early",
-          body: `${fatal} (${done} before that.) Your picks are saved, so you can carry on once it's sorted.`,
+          body: (
+            <>
+              <ErrorText message={fatal} /> ({done} before that.) Your picks are saved, so you can carry on once
+              it&apos;s sorted.
+            </>
+          ),
         });
       } else if (failed || stale.length) {
         await saveStep({
@@ -1117,335 +1131,339 @@ export function App({ children }: { children?: React.ReactNode }) {
   if (!hydrated) return <main>{header}</main>;
 
   return (
-    <main>
-      {dialog}
-      <ModalOverlay
-        className="modal-overlay"
-        isOpen={!!saveDialog}
-        onOpenChange={(open) => !open && answerSave(false)}
-        isDismissable={saveDialog?.kind !== "saving" && saveDialog?.dismissable !== false}
-        isKeyboardDismissDisabled={saveDialog?.kind === "saving" || saveDialog?.dismissable === false}
-      >
-        <Modal className="modal">
-          <Dialog className="dialog" role={saveDialog?.confirmLabel ? "alertdialog" : "dialog"}>
-            {saveDialog?.kind === "saving" ? (
-              // Can't be dismissed or stopped: it closes itself once every change has been tried.
-              <>
-                <Heading slot="title">Saving to {targetName}…</Heading>
-                <ProgressBar
-                  className="progress"
-                  aria-label={`Saving to ${targetName}`}
-                  value={runDone}
-                  maxValue={run?.length || 1}
-                  valueLabel={`${runDone} of ${plural(run?.length ?? 0, "change")}`}
-                >
-                  {({ percentage, valueText }) => (
-                    <>
-                      <div className="progress-track">
-                        <div className="progress-fill" style={{ width: `${percentage}%` }} />
-                      </div>
-                      <span className="muted small">{valueText}</span>
-                    </>
-                  )}
-                </ProgressBar>
-                {pause && pause.bucket !== "search" && (
-                  <p className="notice small">7TV asked us to slow down. Carrying on in {pause.seconds}s.</p>
-                )}
-              </>
-            ) : (
-              saveDialog && <DialogContent {...saveDialog} onClose={answerSave} />
-            )}
-          </Dialog>
-        </Modal>
-      </ModalOverlay>
-      {header}
-      {me && clipboardWarning && (
-        <div className="card narrow notice-card" role="alert">
-          <span>
-            Your browser didn&apos;t let us clear your clipboard, so your token may still be on it. Copy something else
-            to overwrite it.
-          </span>
-          <Button className="link-button" onPress={() => setClipboardWarning(false)}>
-            Dismiss
-          </Button>
-        </div>
-      )}
-
-      {!token ? (
-        <TokenGate
-          onToken={(t) => {
-            clearClipboardAfterLogin.current = true;
-            setToken(t);
-          }}
-          error={authError}
-        />
-      ) : account === "error" ? (
-        <section className="card narrow center stack" role="alert">
-          <p>{me ? "Couldn't load your emote sets." : "Couldn't check your 7TV session."}</p>
-          <p className="error">{authError}</p>
-          <div className="buttons-row">
-            <Button className="btn primary" onPress={() => setAccountAttempt((n) => n + 1)}>
-              Retry
-            </Button>
-            <Button className="btn" onPress={() => signOut()}>
-              Use a different token
-            </Button>
-          </div>
-        </section>
-      ) : !me ? (
-        <LoadingCard message="Signing you in…" />
-      ) : session ? (
-        <>
-          <section className="card toolbar" aria-label="Your progress">
-            <div className="summary">
-              <div className="pair">
-                <b>{session.source.name}</b> <span className="muted">→</span> <b>{session.target.name}</b>
-              </div>
-              <div className="muted small">
-                Looking for emotes tagged {session.tags.join(" or ")}, sorted by{" "}
-                {SORT_OPTIONS.find((i) => i.id === session.params.sortBy)?.label}
-              </div>
-              <div className="stats">
-                <span>
-                  <b>{stats.replace}</b> seasonal
-                </span>
-                <span>
-                  <b>{stats.original}</b> as-is
-                </span>
-                <span>
-                  <b>{stats.exclude}</b> skipped
-                </span>
-                <span>
-                  <b>{stats.undecided}</b> unreviewed
-                </span>
-                {session.mapped.length > 0 && (
-                  <span className="muted">
-                    {session.mapped.length} already added
-                    {(() => {
-                      const swapping = swaps.filter((r) => isMapped(r.alias)).length;
-                      const removing = session.mapped.filter((r) => choices[r.alias]?.kind === "remove").length;
-                      const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`];
-                      return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
-                    })()}
-                  </span>
-                )}
-                {extras.length > 0 && (
-                  <span className="muted">
-                    {extras.length} not in base
-                    {(() => {
-                      const swapping = swaps.filter((r) => isExtra(r.alias)).length;
-                      const removing = extras.filter((e) => choices[e.alias]?.kind === "remove").length;
-                      const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`];
-                      return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
-                    })()}
-                  </span>
-                )}
-                {capacity != null && free != null && (
-                  <span className={free < 0 ? "error" : "muted"}>
-                    {free < 0 ? `${-free} over capacity` : `${plural(free, "slot")} left after saving`}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="buttons">
-              {stats.undecided > 0 && (
-                <Button className="btn" onPress={jumpToNextUndecided}>
-                  Next unreviewed
-                </Button>
-              )}
-              <Button className="btn primary" onPress={apply} isDisabled={preparing || applying}>
-                {preparing ? (
-                  <>
-                    <Spinner label="Checking your seasonal set" size="sm" /> Checking your seasonal set…
-                  </>
-                ) : (
-                  applyLabel
-                )}
-              </Button>
-              <Button className="btn ghost-danger" isDisabled={applying} onPress={cancelMapping}>
-                Start over
-              </Button>
-            </div>
-            {stats.errors > 0 && !applying && (
-              <div className="problems" role="region" aria-label="Failed emotes">
-                <h3>{plural(stats.errors, "emote")} failed</h3>
-                <ul>
-                  {[...rows, ...extras].flatMap((r) =>
-                    applyStates[r.alias]?.state === "error"
-                      ? [
-                          <li key={r.alias}>
-                            <Button className="link-button" onPress={() => setIndex(stepOfAlias(r.alias))}>
-                              {r.alias}
-                            </Button>
-                            : {applyStates[r.alias]?.message}
-                          </li>,
-                        ]
-                      : [],
-                  )}
-                </ul>
-              </div>
-            )}
-            {interrupted.length > 0 && (
-              <div className="alert small" role="alert">
-                The page closed partway through {interrupted.length === 1 ? "a swap" : `${interrupted.length} swaps`} (
-                {interrupted.join(", ")}): the old emote came out but the new one didn&apos;t go in yet. Save again to
-                finish, or pick the <i>previous</i> emote to put it back.
-              </div>
-            )}
-            {pause && (
-              <div className="notice small" role="status">
-                {pause.bucket === "search"
-                  ? `You've hit 7TV's search limit. Searching again in ${pause.seconds}s.`
-                  : `7TV asked us to slow down. Carrying on in ${pause.seconds}s.`}
-              </div>
-            )}
-          </section>
-
-          {sections.length > 1 ? (
-            // One tab per section with emotes in it; a single section needs no tabs.
-            <Tabs
-              className="section-tabs"
-              selectedKey={section}
-              onSelectionChange={(key) => goToSection(key as Section)}
-            >
-              <TabList className="section-tab-list" aria-label="Sections">
-                {sections.map((sec) => (
-                  <Tab key={sec} id={sec} className="section-tab">
-                    {sectionTitle[sec]} <span className="section-tab-count">{sectionSize[sec]}</span>
-                  </Tab>
-                ))}
-              </TabList>
-              <TabPanel id={section}>{card}</TabPanel>
-            </Tabs>
-          ) : (
-            card
-          )}
-
-          {rows.length + extras.length > 0 && (
-            <section className="card" aria-label="All emotes">
-              <div className="overview-head">
-                <h3>All emotes</h3>
-                <SelectField
-                  aria-label="Filter emotes"
-                  className="compact"
-                  items={filterItems}
-                  value={filter}
-                  onChange={(id) => setFilter(id as Filter)}
-                />
-              </div>
-              <MappingOverview
-                sections={overviewSections}
-                current={index}
-                choices={choices}
-                targetEntries={targetEntries}
-                applyStates={applyStates}
-                onJump={setIndex}
-              />
-            </section>
-          )}
-        </>
-      ) : (
-        <>
-
-          {resume ? (
-            <section className="card narrow center stack">
-              {loadError ? (
+    <LogInAgainContext.Provider value={logInAgain}>
+      <main>
+        {dialog}
+        <ModalOverlay
+          className="modal-overlay"
+          isOpen={!!saveDialog}
+          onOpenChange={(open) => !open && answerSave(false)}
+          isDismissable={saveDialog?.kind !== "saving" && saveDialog?.dismissable !== false}
+          isKeyboardDismissDisabled={saveDialog?.kind === "saving" || saveDialog?.dismissable === false}
+        >
+          <Modal className="modal">
+            <Dialog className="dialog" role={saveDialog?.confirmLabel ? "alertdialog" : "dialog"}>
+              {saveDialog?.kind === "saving" ? (
+                // Can't be dismissed or stopped: it closes itself once every change has been tried.
                 <>
-                  <p>Couldn&apos;t pick up where you left off.</p>
-                  <p className="error">{loadError}</p>
-                  <div className="buttons-row">
-                    <Button className="btn primary" onPress={() => void startMapping(resume, resume)}>
-                      Try again
-                    </Button>
-                    <Button className="btn ghost-danger" onPress={cancelMapping}>
-                      Start over
-                    </Button>
-                  </div>
+                  <Heading slot="title">Saving to {targetName}…</Heading>
+                  <ProgressBar
+                    className="progress"
+                    aria-label={`Saving to ${targetName}`}
+                    value={runDone}
+                    maxValue={run?.length || 1}
+                    valueLabel={`${runDone} of ${plural(run?.length ?? 0, "change")}`}
+                  >
+                    {({ percentage, valueText }) => (
+                      <>
+                        <div className="progress-track">
+                          <div className="progress-fill" style={{ width: `${percentage}%` }} />
+                        </div>
+                        <span className="muted small">{valueText}</span>
+                      </>
+                    )}
+                  </ProgressBar>
+                  {pause && pause.bucket !== "search" && (
+                    <p className="notice small">7TV asked us to slow down. Carrying on in {pause.seconds}s.</p>
+                  )}
                 </>
               ) : (
-                <div className="loading-card">
-                  <Spinner label="Picking up where you left off" />
-                  <p className="muted">Picking up where you left off…</p>
+                saveDialog && <DialogContent {...saveDialog} onClose={answerSave} />
+              )}
+            </Dialog>
+          </Modal>
+        </ModalOverlay>
+        {header}
+        {me && clipboardWarning && (
+          <div className="card narrow notice-card" role="alert">
+            <span>
+              Your browser didn&apos;t let us clear your clipboard, so your token may still be on it. Copy something else
+              to overwrite it.
+            </span>
+            <Button className="link-button" onPress={() => setClipboardWarning(false)}>
+              Dismiss
+            </Button>
+          </div>
+        )}
+
+        {!token ? (
+          <TokenGate
+            onToken={(t) => {
+              clearClipboardAfterLogin.current = true;
+              setToken(t);
+            }}
+            error={authError}
+          />
+        ) : account === "error" ? (
+          <section className="card narrow center stack" role="alert">
+            <p>{me ? "Couldn't load your emote sets." : "Couldn't check your 7TV session."}</p>
+            <p className="error">{authError}</p>
+            <div className="buttons-row">
+              <Button className="btn primary" onPress={() => setAccountAttempt((n) => n + 1)}>
+                Retry
+              </Button>
+              <Button className="btn" onPress={() => signOut()}>
+                Use a different token
+              </Button>
+            </div>
+          </section>
+        ) : !me ? (
+          <LoadingCard message="Signing you in…" />
+        ) : session ? (
+          <>
+            <section className="card toolbar" aria-label="Your progress">
+              <div className="summary">
+                <div className="pair">
+                  <b>{session.source.name}</b> <span className="muted">→</span> <b>{session.target.name}</b>
+                </div>
+                <div className="muted small">
+                  Looking for emotes tagged {session.tags.join(" or ")}, sorted by{" "}
+                  {SORT_OPTIONS.find((i) => i.id === session.params.sortBy)?.label}
+                </div>
+                <div className="stats">
+                  <span>
+                    <b>{stats.replace}</b> seasonal
+                  </span>
+                  <span>
+                    <b>{stats.original}</b> as-is
+                  </span>
+                  <span>
+                    <b>{stats.exclude}</b> skipped
+                  </span>
+                  <span>
+                    <b>{stats.undecided}</b> unreviewed
+                  </span>
+                  {session.mapped.length > 0 && (
+                    <span className="muted">
+                      {session.mapped.length} already added
+                      {(() => {
+                        const swapping = swaps.filter((r) => isMapped(r.alias)).length;
+                        const removing = session.mapped.filter((r) => choices[r.alias]?.kind === "remove").length;
+                        const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`];
+                        return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
+                      })()}
+                    </span>
+                  )}
+                  {extras.length > 0 && (
+                    <span className="muted">
+                      {extras.length} not in base
+                      {(() => {
+                        const swapping = swaps.filter((r) => isExtra(r.alias)).length;
+                        const removing = extras.filter((e) => choices[e.alias]?.kind === "remove").length;
+                        const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`];
+                        return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
+                      })()}
+                    </span>
+                  )}
+                  {capacity != null && free != null && (
+                    <span className={free < 0 ? "error" : "muted"}>
+                      {free < 0 ? `${-free} over capacity` : `${plural(free, "slot")} left after saving`}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="buttons">
+                {stats.undecided > 0 && (
+                  <Button className="btn" onPress={jumpToNextUndecided}>
+                    Next unreviewed
+                  </Button>
+                )}
+                <Button className="btn primary" onPress={apply} isDisabled={preparing || applying}>
+                  {preparing ? (
+                    <>
+                      <Spinner label="Checking your seasonal set" size="sm" /> Checking your seasonal set…
+                    </>
+                  ) : (
+                    applyLabel
+                  )}
+                </Button>
+                <Button className="btn ghost-danger" isDisabled={applying} onPress={cancelMapping}>
+                  Start over
+                </Button>
+              </div>
+              {stats.errors > 0 && !applying && (
+                <div className="problems" role="region" aria-label="Failed emotes">
+                  <h3>{plural(stats.errors, "emote")} failed</h3>
+                  <ul>
+                    {[...rows, ...extras].flatMap((r) =>
+                      applyStates[r.alias]?.state === "error"
+                        ? [
+                            <li key={r.alias}>
+                              <Button className="link-button" onPress={() => setIndex(stepOfAlias(r.alias))}>
+                                {r.alias}
+                              </Button>
+                              : <ErrorText message={applyStates[r.alias]?.message ?? ""} />
+                            </li>,
+                          ]
+                        : [],
+                    )}
+                  </ul>
+                </div>
+              )}
+              {interrupted.length > 0 && (
+                <div className="alert small" role="alert">
+                  The page closed partway through {interrupted.length === 1 ? "a swap" : `${interrupted.length} swaps`} (
+                  {interrupted.join(", ")}): the old emote came out but the new one didn&apos;t go in yet. Save again to
+                  finish, or pick the <i>previous</i> emote to put it back.
+                </div>
+              )}
+              {pause && (
+                <div className="notice small" role="status">
+                  {pause.bucket === "search"
+                    ? `You've hit 7TV's search limit. Searching again in ${pause.seconds}s.`
+                    : `7TV asked us to slow down. Carrying on in ${pause.seconds}s.`}
                 </div>
               )}
             </section>
-          ) : account !== "ready" ? (
-            <LoadingCard message="Loading your emote sets…" />
-          ) : (
-            <section className="card setup" aria-label="Choose your sets">
-              <SetPicker
-                label="Base set"
-                description="Your regular emote set"
-                sets={sets}
-                value={sourceId}
-                onChange={(id) => {
-                  setSourceId(id);
-                  setSourceLinkError(null);
-                }}
-                allowCustom
-                linkError={sourceLinkError}
-              />
-              <SetPicker
-                label="Target set"
-                description="Where to add the seasonal emotes"
-                sets={sets}
-                value={targetId}
-                onChange={setTargetId}
-                disabledId={sourceId}
-              />
-              <div className="field-group">
-                <SelectField
-                  label="Theme"
-                  items={themeItems}
-                  value={theme}
-                  onChange={(id) => setTheme(id as Theme)}
-                  description={theme === "custom" ? undefined : `Search for emotes tagged ${tags.join(" or ")}`}
+
+            {sections.length > 1 ? (
+              // One tab per section with emotes in it; a single section needs no tabs.
+              <Tabs
+                className="section-tabs"
+                selectedKey={section}
+                onSelectionChange={(key) => goToSection(key as Section)}
+              >
+                <TabList className="section-tab-list" aria-label="Sections">
+                  {sections.map((sec) => (
+                    <Tab key={sec} id={sec} className="section-tab">
+                      {sectionTitle[sec]} <span className="section-tab-count">{sectionSize[sec]}</span>
+                    </Tab>
+                  ))}
+                </TabList>
+                <TabPanel id={section}>{card}</TabPanel>
+              </Tabs>
+            ) : (
+              card
+            )}
+
+            {rows.length + extras.length > 0 && (
+              <section className="card" aria-label="All emotes">
+                <div className="overview-head">
+                  <h3>All emotes</h3>
+                  <SelectField
+                    aria-label="Filter emotes"
+                    className="compact"
+                    items={filterItems}
+                    value={filter}
+                    onChange={(id) => setFilter(id as Filter)}
+                  />
+                </div>
+                <MappingOverview
+                  sections={overviewSections}
+                  current={index}
+                  choices={choices}
+                  targetEntries={targetEntries}
+                  applyStates={applyStates}
+                  onJump={setIndex}
                 />
-                {theme === "custom" && (
-                  <TextField className="field" value={customTags} onChange={setCustomTags}>
-                    <Label className="visually-hidden">Custom tags</Label>
-                    <Input placeholder="Tags to look for, e.g. spring, easter" />
-                  </TextField>
+              </section>
+            )}
+          </>
+        ) : (
+          <>
+
+            {resume ? (
+              <section className="card narrow center stack">
+                {loadError ? (
+                  <>
+                    <p>Couldn&apos;t pick up where you left off.</p>
+                    <p className="error">
+                      <ErrorText message={loadError} />
+                    </p>
+                    <div className="buttons-row">
+                      <Button className="btn primary" onPress={() => void startMapping(resume, resume)}>
+                        Try again
+                      </Button>
+                      <Button className="btn ghost-danger" onPress={cancelMapping}>
+                        Start over
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="loading-card">
+                    <Spinner label="Picking up where you left off" />
+                    <p className="muted">Picking up where you left off…</p>
+                  </div>
                 )}
-              </div>
-              <SelectField
-                label="Sort by"
-                items={SORT_OPTIONS}
-                value={sortBy}
-                onChange={(id) => setSortBy(id as SortBy)}
-              />
-              <div className="actions">
-                <Button
-                  className="btn primary"
-                  isDisabled={!sourceId || !targetId || sourceId === targetId || !tags.length}
-                  isPending={loading}
-                  onPress={() =>
-                    sourceId && targetId && void startMapping({ sourceId, targetId, theme, customTags, sortBy })
-                  }
-                >
-                  {({ isPending }) => (
-                    <>
-                      {isPending && <Spinner label="Loading your sets" size="sm" />}
-                      Start picking
-                    </>
+              </section>
+            ) : account !== "ready" ? (
+              <LoadingCard message="Loading your emote sets…" />
+            ) : (
+              <section className="card setup" aria-label="Choose your sets">
+                <SetPicker
+                  label="Base set"
+                  description="Your regular emote set"
+                  sets={sets}
+                  value={sourceId}
+                  onChange={(id) => {
+                    setSourceId(id);
+                    setSourceLinkError(null);
+                  }}
+                  allowCustom
+                  linkError={sourceLinkError}
+                />
+                <SetPicker
+                  label="Target set"
+                  description="Where to add the seasonal emotes"
+                  sets={sets}
+                  value={targetId}
+                  onChange={setTargetId}
+                  disabledId={sourceId}
+                />
+                <div className="field-group">
+                  <SelectField
+                    label="Theme"
+                    items={themeItems}
+                    value={theme}
+                    onChange={(id) => setTheme(id as Theme)}
+                    description={theme === "custom" ? undefined : `Search for emotes tagged ${tags.join(" or ")}`}
+                  />
+                  {theme === "custom" && (
+                    <TextField className="field" value={customTags} onChange={setCustomTags}>
+                      <Label className="visually-hidden">Custom tags</Label>
+                      <Input placeholder="Tags to look for, e.g. spring, easter" />
+                    </TextField>
                   )}
-                </Button>
-                {sourceId && sourceId === targetId && (
-                  <span className="error small">Your base and seasonal sets need to be different.</span>
-                )}
-                {theme === "custom" && !tags.length && <span className="muted small">Add at least one tag.</span>}
-                {loadError && <span className="error small">{loadError}</span>}
-                {sets.length === 0 && (
-                  <span className="muted small">
-                    You can&apos;t edit any emote sets yet. Create your seasonal set on 7tv.app, then reload.
-                  </span>
-                )}
-              </div>
-            </section>
-          )}
-        </>
-      )}
-      {children}
-    </main>
+                </div>
+                <SelectField
+                  label="Sort by"
+                  items={SORT_OPTIONS}
+                  value={sortBy}
+                  onChange={(id) => setSortBy(id as SortBy)}
+                />
+                <div className="actions">
+                  <Button
+                    className="btn primary"
+                    isDisabled={!sourceId || !targetId || sourceId === targetId || !tags.length}
+                    isPending={loading}
+                    onPress={() =>
+                      sourceId && targetId && void startMapping({ sourceId, targetId, theme, customTags, sortBy })
+                    }
+                  >
+                    {({ isPending }) => (
+                      <>
+                        {isPending && <Spinner label="Loading your sets" size="sm" />}
+                        Start picking
+                      </>
+                    )}
+                  </Button>
+                  {sourceId && sourceId === targetId && (
+                    <span className="error small">Your base and seasonal sets need to be different.</span>
+                  )}
+                  {theme === "custom" && !tags.length && <span className="muted small">Add at least one tag.</span>}
+                  {loadError && <span className="error small">{loadError}</span>}
+                  {sets.length === 0 && (
+                    <span className="muted small">
+                      You can&apos;t edit any emote sets yet. Create your seasonal set on 7tv.app, then reload.
+                    </span>
+                  )}
+                </div>
+              </section>
+            )}
+          </>
+        )}
+        {children}
+      </main>
+    </LogInAgainContext.Provider>
   );
 }

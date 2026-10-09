@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import type { Key } from "react-aria-components";
 import {
   Button,
@@ -91,5 +92,27 @@ export function LoadingCard({ message }: { message: string }) {
       <Spinner label={message} />
       <p className="muted">{message}</p>
     </section>
+  );
+}
+
+/** Signs the user out to the login screen, keeping their in-progress mapping. Provided by App. */
+export const LogInAgainContext = createContext<(() => void) | null>(null);
+
+/**
+ * An error message as text, except that "Log in" in "…Log in again…" (an expired session, see friendlyError)
+ * becomes a button back to the login screen.
+ */
+export function ErrorText({ message }: { message: string }) {
+  const logInAgain = useContext(LogInAgainContext);
+  const i = message.indexOf("Log in again");
+  if (i < 0 || !logInAgain) return <>{message}</>;
+  return (
+    <>
+      {message.slice(0, i)}
+      <Button className="link-button" onPress={logInAgain}>
+        Log in
+      </Button>
+      {message.slice(i + "Log in".length)}
+    </>
   );
 }
