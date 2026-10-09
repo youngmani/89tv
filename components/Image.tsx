@@ -8,13 +8,14 @@ import { type ComponentProps, useState } from "react";
  */
 export function Image({
   src,
+  alt,
   index = 0,
   className,
   style,
   onLoad,
   onError,
   ...props
-}: Omit<ComponentProps<"img">, "src"> & { src: string; index?: number }) {
+}: Omit<ComponentProps<"img">, "src" | "alt"> & { src: string; alt: string; index?: number }) {
   // Tracked per src, so swapping the image in place shows the placeholder again.
   const [doneSrc, setDoneSrc] = useState<string>();
   const loading = doneSrc !== src;
@@ -22,6 +23,7 @@ export function Image({
     <img
       {...props}
       src={src}
+      alt={alt}
       className={[className, loading ? "img-loading" : ""].filter(Boolean).join(" ") || undefined}
       style={loading ? { animationDelay: `${-index * 10}ms`, ...style } : style}
       onLoad={(e) => {

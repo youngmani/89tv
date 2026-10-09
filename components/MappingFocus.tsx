@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Button, Checkbox, Form, Input, Link, TextField, ToggleButton } from "react-aria-components";
+import {
+  Button,
+  Checkbox,
+  Form,
+  Input,
+  Link,
+  TextField,
+  ToggleButton,
+} from "react-aria-components";
 import { Image } from "@/components/Image";
 import { ErrorText, SelectField, Spinner } from "@/components/ui";
 import { shouldIgnoreKey } from "@/lib/hotkeys";
@@ -14,7 +22,14 @@ import {
   type SearchState,
   outcome,
 } from "@/lib/mapping";
-import { type EmoteSummary, type SetEmote, type SortBy, emoteImage, emotePage, ownerName } from "@/lib/seventv";
+import {
+  type EmoteSummary,
+  type SetEmote,
+  type SortBy,
+  emoteImage,
+  emotePage,
+  ownerName,
+} from "@/lib/seventv";
 
 /** A selectable emote. The 7tv.app link is a sibling of the button, never nested inside it. */
 function Tile({
@@ -150,7 +165,9 @@ export function MappingFocus({
   const baseline: Choice = mapped ? { kind: "keep" } : { kind: "original" };
   // While a new search runs, the previous results stay up (dimmed, not selectable) under a spinner.
   const loading = !search || search.status === "loading";
-  const items = (search?.items ?? []).filter((e) => e.id !== current?.id && e.id !== previous?.emote.id);
+  const items = (search?.items ?? []).filter(
+    (e) => e.id !== current?.id && e.id !== previous?.emote.id,
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -198,7 +215,11 @@ export function MappingFocus({
         </Button>
         <div className="focus-title">
           {changed ? (
-            <div className="focus-images" role="img" aria-label={`${source.emote.defaultName} → ${changed.defaultName}`}>
+            <div
+              className="focus-images"
+              role="img"
+              aria-label={`${source.emote.defaultName} → ${changed.defaultName}`}
+            >
               <Image src={emoteImage(source.emote.id, 3)} alt="" />
               <span className="arrow" aria-hidden>
                 →
@@ -208,7 +229,9 @@ export function MappingFocus({
           ) : (
             <Image src={emoteImage(source.emote.id, 3)} alt="" />
           )}
-          <div className={`alias${choice.kind === "remove" || choice.kind === "exclude" ? " struck" : ""}`}>
+          <div
+            className={`alias${choice.kind === "remove" || choice.kind === "exclude" ? " struck" : ""}`}
+          >
             {source.alias}
           </div>
           <div className="muted small">
@@ -216,7 +239,8 @@ export function MappingFocus({
             {source.flags.zeroWidth ? "zero-width · " : ""}
             {replacing ? (
               <span className="replacing">
-                replacing <Image src={emoteImage(replacing.id, 1)} alt="" /> {replacing.defaultName} ·{" "}
+                replacing <Image src={emoteImage(replacing.id, 1)} alt="" /> {replacing.defaultName}{" "}
+                ·{" "}
               </span>
             ) : !inBase ? (
               "only in your seasonal set · "
@@ -260,13 +284,21 @@ export function MappingFocus({
           </Button>
         </div>
         <div className="search-filters">
-          <Checkbox className="checkbox" isSelected={opts.exact} onChange={(exact) => update({ exact }, true)}>
+          <Checkbox
+            className="checkbox"
+            isSelected={opts.exact}
+            onChange={(exact) => update({ exact }, true)}
+          >
             <span className="box" aria-hidden>
               ✓
             </span>
             Exact name
           </Checkbox>
-          <Checkbox className="checkbox" isSelected={opts.tagged} onChange={(tagged) => update({ tagged }, true)}>
+          <Checkbox
+            className="checkbox"
+            isSelected={opts.tagged}
+            onChange={(tagged) => update({ tagged }, true)}
+          >
             <span className="box" aria-hidden>
               ✓
             </span>
@@ -292,54 +324,56 @@ export function MappingFocus({
       {apply?.state === "removed" && <div className="ok small">✓ Removed</div>}
 
       <div className={`tiles-area${loading ? " loading" : ""}`}>
-        {loading && (
-          <Spinner label="Searching" className="spinner" />
-        )}
-      <div className="tiles">
-        {previous && (
-          <Tile
-            emote={previous.emote}
-            selected={chosen?.id === previous.emote.id}
-            onSelect={() => onChoose({ kind: "replace", emote: previous.emote }, true)}
-            badge="previous"
-            note="taken out by an unfinished swap"
-          />
-        )}
-        {/* Base before current, in the same order as the header's "base → current". */}
-        {inBase && (!mapped || current?.id !== source.emote.id) && (
-          <Tile
-            emote={source.emote}
-            selected={choice.kind === "original" && !keepsCurrent}
-            onSelect={() => onChoose({ kind: "original" }, true)}
-            badge="base"
-            zeroWidth={source.flags.zeroWidth}
-            hotkey={mapped ? undefined : "0"}
-          />
-        )}
-        {mapped && current && (
-          <Tile
-            emote={current}
-            selected={keepsCurrent}
-            onSelect={() => onChoose({ kind: "keep" }, true)}
-            badge={current.deleted ? "current (deleted)" : "current"}
-            zeroWidth={inTarget?.flags.zeroWidth}
-            hotkey="0"
-          />
-        )}
-        {chosen && chosenMissing && <Tile emote={chosen} selected onSelect={() => onChoose(choice, true)} badge="chosen" />}
-        {items.map((e, i) => (
-          <Tile
-            key={e.id}
-            emote={e}
-            selected={chosen?.id === e.id}
-            onSelect={() => onChoose({ kind: "replace", emote: e }, true)}
-            isDisabled={loading}
-            hotkey={i < 9 ? String(i + 1) : undefined}
-            index={i}
-            note={e.inTarget.length ? `in your seasonal set as ${e.inTarget.join(", ")}` : undefined}
-          />
-        ))}
-      </div>
+        {loading && <Spinner label="Searching" className="spinner" />}
+        <div className="tiles">
+          {previous && (
+            <Tile
+              emote={previous.emote}
+              selected={chosen?.id === previous.emote.id}
+              onSelect={() => onChoose({ kind: "replace", emote: previous.emote }, true)}
+              badge="previous"
+              note="taken out by an unfinished swap"
+            />
+          )}
+          {/* Base before current, in the same order as the header's "base → current". */}
+          {inBase && (!mapped || current?.id !== source.emote.id) && (
+            <Tile
+              emote={source.emote}
+              selected={choice.kind === "original" && !keepsCurrent}
+              onSelect={() => onChoose({ kind: "original" }, true)}
+              badge="base"
+              zeroWidth={source.flags.zeroWidth}
+              hotkey={mapped ? undefined : "0"}
+            />
+          )}
+          {mapped && current && (
+            <Tile
+              emote={current}
+              selected={keepsCurrent}
+              onSelect={() => onChoose({ kind: "keep" }, true)}
+              badge={current.deleted ? "current (deleted)" : "current"}
+              zeroWidth={inTarget?.flags.zeroWidth}
+              hotkey="0"
+            />
+          )}
+          {chosen && chosenMissing && (
+            <Tile emote={chosen} selected onSelect={() => onChoose(choice, true)} badge="chosen" />
+          )}
+          {items.map((e, i) => (
+            <Tile
+              key={e.id}
+              emote={e}
+              selected={chosen?.id === e.id}
+              onSelect={() => onChoose({ kind: "replace", emote: e }, true)}
+              isDisabled={loading}
+              hotkey={i < 9 ? String(i + 1) : undefined}
+              index={i}
+              note={
+                e.inTarget.length ? `in your seasonal set as ${e.inTarget.join(", ")}` : undefined
+              }
+            />
+          ))}
+        </div>
       </div>
 
       <div className="muted small status" aria-live="polite">
@@ -357,18 +391,23 @@ export function MappingFocus({
         ) : (
           <>
             {search.via === "link" ? (
-              items.length
-                ? "Found the emote from that link"
-                : search.hidden
-                  ? "That emote is private or deleted, so it can't be added"
-                  : "That link is the emote that's already here"
+              items.length ? (
+                "Found the emote from that link"
+              ) : search.hidden ? (
+                "That emote is private or deleted, so it can't be added"
+              ) : (
+                "That link is the emote that's already here"
+              )
             ) : (
               <>
-                {search.via === "link-missing" && "No emote with that ID, so this is a regular search: "}
+                {search.via === "link-missing" &&
+                  "No emote with that ID, so this is a regular search: "}
                 {search.total} result{search.total === 1 ? "" : "s"} for “{search.query}”
               </>
             )}
-            {search.via !== "link" && search.hidden > 0 && ` · hiding ${search.hidden} private or deleted`}
+            {search.via !== "link" &&
+              search.hidden > 0 &&
+              ` · hiding ${search.hidden} private or deleted`}
             {search.via !== "link" &&
               items.length === 0 &&
               (mapped
@@ -419,8 +458,9 @@ export function MappingFocus({
           </ToggleButton>
         )}
         <div className="muted small keys" aria-hidden>
-          <kbd>0</kbd> {mapped ? "keep current" : "use base"} · <kbd>1</kbd>–<kbd>9</kbd> pick · <kbd>X</kbd>{" "}
-          {mapped ? "remove" : "skip"} · <kbd>→</kbd>/<kbd>Enter</kbd> next · <kbd>←</kbd> back
+          <kbd>0</kbd> {mapped ? "keep current" : "use base"} · <kbd>1</kbd>–<kbd>9</kbd> pick ·{" "}
+          <kbd>X</kbd> {mapped ? "remove" : "skip"} · <kbd>→</kbd>/<kbd>Enter</kbd> next ·{" "}
+          <kbd>←</kbd> back
         </div>
       </div>
     </section>

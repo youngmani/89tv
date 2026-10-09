@@ -81,7 +81,13 @@ function OpenConsoleStep({ env }: { env: Env }) {
 // the login flow itself. Instead the user copies their existing 7tv.app session token.
 // The token is never displayed: it's read straight from the clipboard (or typed into a masked field), and
 // no message ever echoes what was pasted. That way streamers can log in on stream.
-export function TokenGate({ onToken, error }: { onToken: (t: string) => void; error?: string | null }) {
+export function TokenGate({
+  onToken,
+  error,
+}: {
+  onToken: (t: string) => void;
+  error?: string | null;
+}) {
   const [copied, setCopied] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   /** Shown only when the browser won't let us read the clipboard. */
@@ -97,7 +103,9 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
     const t = cleanToken(raw);
     if (!looksLikeToken(t)) {
       // Deliberately vague: never repeat clipboard contents back.
-      setProblem("That doesn't look like a 7TV token. Run the command on 7tv.app again, then try once more.");
+      setProblem(
+        "That doesn't look like a 7TV token. Run the command on 7tv.app again, then try once more.",
+      );
       return;
     }
     setProblem(null);
@@ -110,7 +118,9 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
       submit(await navigator.clipboard.readText());
     } catch {
       setManual(true);
-      setProblem("Your browser didn't let us read the clipboard. Paste the token into the box instead; it stays hidden.");
+      setProblem(
+        "Your browser didn't let us read the clipboard. Paste the token into the box instead; it stays hidden.",
+      );
     }
   };
 
@@ -119,88 +129,89 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
       {env.mobile && (
         <div className="card narrow notice-card" role="note">
           <span>
-            Mobile browsers don&apos;t have a developer console, so you can&apos;t get your token on this device. Open
-            89TV on a computer instead. If your token is already on your clipboard, press the button below.
+            Mobile browsers don&apos;t have a developer console, so you can&apos;t get your token on
+            this device. Open 89TV on a computer instead. If your token is already on your
+            clipboard, press the button below.
           </span>
         </div>
       )}
-    <section className="card narrow stack">
-      <h2>Connect your 7TV account</h2>
-      <p className="muted">
-        7TV doesn't support third-party login, so this tool uses your existing 7tv.app session token. It stays
-        in your browser and is only ever sent to <code>api.7tv.app</code>.
-      </p>
-
-
-      <ol className="steps">
-        <li>
-          Open{" "}
-          <Link href="https://7tv.app" target="_blank" rel="noreferrer">
-            7tv.app
-          </Link>{" "}
-          and make sure you&apos;re logged in.
-        </li>
-        <li>
-          <OpenConsoleStep env={env} />
-        </li>
-        <li>
-          Paste this into the Console and press Enter. It copies your token without showing it:
-          <div className="snippet">
-            <code>{SNIPPET}</code>
-            <Button
-              className="btn small"
-              onPress={async () => {
-                try {
-                  await navigator.clipboard.writeText(SNIPPET);
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 1500);
-                } catch {
-                  /* clipboard unavailable; the user can select the text */
-                }
-              }}
-            >
-              {copied ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          {env.browser !== "safari" && (
-            <span className="muted small">
-              If the console warns about pasting, type <code>allow pasting</code> and press Enter first.
-            </span>
-          )}
-        </li>
-        <li>Come back here and press the button.</li>
-      </ol>
-
-      <div className="buttons-row">
-        <Button className="btn primary" onPress={pasteAndLogIn}>
-          Paste and log in
-        </Button>
-      </div>
-
-      {manual && (
-        <Form
-          className="manual-token"
-          onSubmit={(e) => {
-            e.preventDefault();
-            submit(value);
-          }}
-        >
-          <TextField className="field" value={value} onChange={setValue} type="password">
-            <Label>7TV token (hidden)</Label>
-            <Input autoComplete="off" spellCheck={false} />
-          </TextField>
-          <Button type="submit" className="btn" isDisabled={!value.trim()}>
-            Log in
-          </Button>
-        </Form>
-      )}
-
-      {(problem || error) && (
-        <p className="error center" role="alert">
-          {problem ?? error}
+      <section className="card narrow stack">
+        <h2>Connect your 7TV account</h2>
+        <p className="muted">
+          7TV doesn't support third-party login, so this tool uses your existing 7tv.app session
+          token. It stays in your browser and is only ever sent to <code>api.7tv.app</code>.
         </p>
-      )}
-    </section>
+
+        <ol className="steps">
+          <li>
+            Open{" "}
+            <Link href="https://7tv.app" target="_blank" rel="noreferrer">
+              7tv.app
+            </Link>{" "}
+            and make sure you&apos;re logged in.
+          </li>
+          <li>
+            <OpenConsoleStep env={env} />
+          </li>
+          <li>
+            Paste this into the Console and press Enter. It copies your token without showing it:
+            <div className="snippet">
+              <code>{SNIPPET}</code>
+              <Button
+                className="btn small"
+                onPress={async () => {
+                  try {
+                    await navigator.clipboard.writeText(SNIPPET);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                  } catch {
+                    /* clipboard unavailable; the user can select the text */
+                  }
+                }}
+              >
+                {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+            {env.browser !== "safari" && (
+              <span className="muted small">
+                If the console warns about pasting, type <code>allow pasting</code> and press Enter
+                first.
+              </span>
+            )}
+          </li>
+          <li>Come back here and press the button.</li>
+        </ol>
+
+        <div className="buttons-row">
+          <Button className="btn primary" onPress={pasteAndLogIn}>
+            Paste and log in
+          </Button>
+        </div>
+
+        {manual && (
+          <Form
+            className="manual-token"
+            onSubmit={(e) => {
+              e.preventDefault();
+              submit(value);
+            }}
+          >
+            <TextField className="field" value={value} onChange={setValue} type="password">
+              <Label>7TV token (hidden)</Label>
+              <Input autoComplete="off" spellCheck={false} />
+            </TextField>
+            <Button type="submit" className="btn" isDisabled={!value.trim()}>
+              Log in
+            </Button>
+          </Form>
+        )}
+
+        {(problem || error) && (
+          <p className="error center" role="alert">
+            {problem ?? error}
+          </p>
+        )}
+      </section>
       <p className="demo-link">
         Just looking?{" "}
         <Link href="/demo" onHoverStart={prefetchDemo} onFocus={prefetchDemo}>

@@ -15,6 +15,10 @@ export function shouldIgnoreKey(e: KeyboardEvent) {
   if (t.closest("input, textarea")) return true;
   // Tabs use the arrow keys (and Home/End) to move between tabs; everything else is free for shortcuts.
   if (/^(Arrow|Home$|End$)/.test(e.key) && t.closest("[role=tab]")) return true;
-  if ((e.key === "Enter" || e.key === " ") && t.closest("button, a, [role=button], [role=option], [role=tab]")) return true;
+  if (
+    (e.key === "Enter" || e.key === " ") &&
+    t.closest("button, a, [role=button], [role=option], [role=tab]")
+  )
+    return true;
   return false;
 }

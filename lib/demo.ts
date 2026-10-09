@@ -1,6 +1,14 @@
 import { DEMO_SEED } from "./demo-data";
 import { type Api, type Services, liveApi, noopSlot } from "./services";
-import { ApiError, type EmoteSetInfo, type EmoteSummary, type Me, type SearchResult, type SetEmote, usedSlots } from "./seventv";
+import {
+  ApiError,
+  type EmoteSetInfo,
+  type EmoteSummary,
+  type Me,
+  type SearchResult,
+  type SetEmote,
+  usedSlots,
+} from "./seventv";
 import { sleep } from "./util";
 
 /** The shape of lib/demo-data.ts. The first seasonal set is pre-selected on the setup form. */
@@ -87,12 +95,18 @@ export class DemoStore {
     if (emote.deleted) throw new ApiError("emote not found", "BAD_REQUEST", 404);
     if (emote.flags.private) throw new ApiError("emote is private", "BAD_REQUEST", 400);
     const name = alias ?? emote.defaultName;
-    const entry: SetEmote = { id: emote.id, alias: name, flags: { zeroWidth }, emote: structuredClone(emote) };
+    const entry: SetEmote = {
+      id: emote.id,
+      alias: name,
+      flags: { zeroWidth },
+      emote: structuredClone(emote),
+    };
     const clash = s.entries.findIndex((e) => e.alias === name);
     // Like 7TV: a name held by a live emote is a conflict; one held by a deleted emote is overwritten.
     if (clash >= 0 && !s.entries[clash].emote.deleted)
       throw new ApiError("this emote has a conflicting name", "BAD_REQUEST", 409);
-    const next = clash >= 0 ? s.entries.map((e, i) => (i === clash ? entry : e)) : [...s.entries, entry];
+    const next =
+      clash >= 0 ? s.entries.map((e, i) => (i === clash ? entry : e)) : [...s.entries, entry];
     if (s.capacity != null && usedSlots(next) > s.capacity)
       throw new ApiError("emote set is at capacity", "BAD_REQUEST", 400);
     s.entries = next;
@@ -133,12 +147,21 @@ export function createDemoServices(seed: DemoSeed = DEMO_SEED): Services {
     fetchSetEmotes: async (id) => (store.has(id) ? store.entries(id) : liveApi.fetchSetEmotes(id)),
     searchEmotes: async (p, token, signal) => {
       const demoTarget = p.targetSetId && store.has(p.targetSetId);
-      const res = await liveApi.searchEmotes(demoTarget ? { ...p, targetSetId: undefined } : p, token, signal);
+      const res = await liveApi.searchEmotes(
+        demoTarget ? { ...p, targetSetId: undefined } : p,
+        token,
+        signal,
+      );
       return { ...res, items: res.items.map((e) => localize(e, p.targetSetId)) };
     },
     fetchEmoteById: async (id, targetSetId, token, signal) => {
       const demoTarget = targetSetId && store.has(targetSetId);
-      const e = await liveApi.fetchEmoteById(id, demoTarget ? undefined : targetSetId, token, signal);
+      const e = await liveApi.fetchEmoteById(
+        id,
+        demoTarget ? undefined : targetSetId,
+        token,
+        signal,
+      );
       return e && localize(e, targetSetId);
     },
     addEmoteToSet: async (_token, setId, emoteId, alias, zeroWidth) => {

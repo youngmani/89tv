@@ -55,8 +55,13 @@ export function SetPicker({
       : "That isn't an emote set link. It should look like https://7tv.app/emote-sets/01H…";
   const error = (touched ? localError : null) ?? linkError ?? null;
 
-  const items = sets.map((s) => ({ id: s.id, label: setLabel(s), isDisabled: s.id === disabledId }));
-  if (allowCustom) items.push({ id: CUSTOM, label: "Any other set (paste a link)…", isDisabled: false });
+  const items = sets.map((s) => ({
+    id: s.id,
+    label: setLabel(s),
+    isDisabled: s.id === disabledId,
+  }));
+  if (allowCustom)
+    items.push({ id: CUSTOM, label: "Any other set (paste a link)…", isDisabled: false });
 
   return (
     <div className="field-group">

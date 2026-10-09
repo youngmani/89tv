@@ -54,7 +54,14 @@ export function SelectField({
       <Button className="select-button">
         <SelectValue className="select-value" />
         <svg className="chevron" viewBox="0 0 16 16" width="16" height="16" aria-hidden>
-          <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M4 6l4 4 4-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </Button>
       {description && (
@@ -77,7 +84,15 @@ export function SelectField({
 }
 
 /** Indeterminate spinner (react-aria ProgressBar), announced to screen readers via `label`. */
-export function Spinner({ label, size = "md", className }: { label: string; size?: "sm" | "md"; className?: string }) {
+export function Spinner({
+  label,
+  size = "md",
+  className,
+}: {
+  label: string;
+  size?: "sm" | "md";
+  className?: string;
+}) {
   return (
     <ProgressBar className={`spinner-wrap ${className ?? ""}`} isIndeterminate aria-label={label}>
       <span className={`spinner-ring${size === "sm" ? " sm" : ""}`} aria-hidden />

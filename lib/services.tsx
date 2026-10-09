@@ -65,7 +65,10 @@ export function createLiveServices(): Services {
 }
 
 /** A slot that forgets everything: nothing is persisted. */
-export const noopSlot = <T,>(fixed: T | null = null): Slot<T> => ({ get: () => fixed, set: () => {} });
+export const noopSlot = <T,>(fixed: T | null = null): Slot<T> => ({
+  get: () => fixed,
+  set: () => {},
+});
 
 const ServicesContext = createContext<Services | null>(null);
 

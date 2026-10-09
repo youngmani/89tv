@@ -6,7 +6,7 @@ A static web app that copies a 7TV emote set into a seasonal (Halloween / Christ
 - Emotes whose name (alias) already exists in the target are listed after the rest as **already in the target**. They stay as they are unless you pick something else. A change swaps them: the current entry is removed and the new emote is added under the same name, and if that add fails the previous emote is put back.
 - Emotes that are only in the target (not in the source) get their own **Not in base** section, where they can be kept, swapped or removed.
 - **The app only removes what you ask it to:** an emote you mark for removal, or the old half of a swap. Before saving, it re-reads the target and leaves alone anything that changed on 7TV since you loaded it.
-- **Closing the page mid-run is recoverable.** Every run re-reads the target first, so emotes that were already added are recognised as mapped and never added twice. Before each swap's remove, the old emote is written to a swap journal in the saved mapping. If the page closes between the remove and the re-add, resuming shows the interrupted swap and offers the old emote as *previously in target*. While a run is in progress, the browser also warns before you leave the page.
+- **Closing the page mid-run is recoverable.** Every run re-reads the target first, so emotes that were already added are recognised as mapped and never added twice. Before each swap's remove, the old emote is written to a swap journal in the saved mapping. If the page closes between the remove and the re-add, resuming shows the interrupted swap and offers the old emote as _previously in target_. While a run is in progress, the browser also warns before you leave the page.
 - For each remaining emote, the app searches 7TV for the emote's **unaliased** name, filtered to the theme's tags (`halloween`, or `christmas`/`xmas`), with exact-name matching (you can switch a search to fuzzy).
 - The whole site's colour scheme follows the chosen theme (Halloween, winter, neutral). UI controls are built with react-aria-components.
 - Pick a result, keep the original, or leave it out. When you apply, each emote is added under the **source alias**, and its zero-width flag is kept. Undecided emotes are copied as the original.
@@ -20,13 +20,13 @@ Keys: `0` keep the base emote (or the current one, if it's already in the target
 
 There's no backend. The browser calls `https://api.7tv.app/v4/gql` directly, and that endpoint reflects any `Origin` in its CORS headers.
 
-| Need | GQL |
-| --- | --- |
-| Current user + editable sets | `users { me { editableEmoteSetIds } }` |
-| Set contents (paginated) | `emoteSets { emoteSet(id) { emotes(page, perPage) { items { alias flags { zeroWidth } emote { … } } } } }` |
-| Seasonal search | `emotes { search(query, tags: { tags, match: ANY }, sort, filters: { exactMatch }) }` |
-| Add emote | `mutation { emoteSets { emoteSet(id) { addEmote(id: { emoteId, alias }, zeroWidth) } } }` |
-| Remove emote (removals and swaps) | `mutation { emoteSets { emoteSet(id) { removeEmote(id: { emoteId, alias }) } } }` |
+| Need                              | GQL                                                                                                        |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Current user + editable sets      | `users { me { editableEmoteSetIds } }`                                                                     |
+| Set contents (paginated)          | `emoteSets { emoteSet(id) { emotes(page, perPage) { items { alias flags { zeroWidth } emote { … } } } } }` |
+| Seasonal search                   | `emotes { search(query, tags: { tags, match: ANY }, sort, filters: { exactMatch }) }`                      |
+| Add emote                         | `mutation { emoteSets { emoteSet(id) { addEmote(id: { emoteId, alias }, zeroWidth) } } }`                  |
+| Remove emote (removals and swaps) | `mutation { emoteSets { emoteSet(id) { removeEmote(id: { emoteId, alias }) } } }`                          |
 
 The v4 schema is introspectable, so you can browse it at `https://api.7tv.app/v4/gql`.
 

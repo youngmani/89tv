@@ -60,7 +60,15 @@ import { type Section, type Step, buildSteps, stepAlias, stepRow, stepSection } 
 import { useServices } from "@/lib/services";
 import { plural, preloadImage, sleep } from "@/lib/util";
 
-type Filter = "all" | "undecided" | "replace" | "original" | "exclude" | "changed" | "remove" | "errors";
+type Filter =
+  | "all"
+  | "undecided"
+  | "replace"
+  | "original"
+  | "exclude"
+  | "changed"
+  | "remove"
+  | "errors";
 
 // Searches are the scarce resource (7TV allows ~100 per window), so we only search the emote on screen
 // and preload the next one.
@@ -97,7 +105,9 @@ const tagsFor = (theme: Theme, customTags: string) =>
     : [...THEMES[theme].tags];
 
 /** A step of the save modal: a message or confirmation (see DialogOptions), or the progress bar. */
-type SaveDialog = (DialogOptions & { kind?: undefined }) | { kind: "saving"; confirmLabel?: undefined; dismissable?: undefined };
+type SaveDialog =
+  | (DialogOptions & { kind?: undefined })
+  | { kind: "saving"; confirmLabel?: undefined; dismissable?: undefined };
 
 /**
  * The whole app. API and storage come from <ServicesProvider> (live on /, faked on /demo).
@@ -112,7 +122,9 @@ export function App({ children }: { children?: React.ReactNode }) {
   const [authError, setAuthError] = useState<string | null>(null);
   const [sets, setSets] = useState<EmoteSetInfo[]>([]);
   /** The account check and the editable-set list load as one blocking phase (nothing to do until both land). */
-  const [account, setAccount] = useState<"idle" | "checking" | "loading-sets" | "ready" | "error">("idle");
+  const [account, setAccount] = useState<"idle" | "checking" | "loading-sets" | "ready" | "error">(
+    "idle",
+  );
   /** Set when the user just logged in from the clipboard, so it's wiped once the token checks out. */
   const clearClipboardAfterLogin = useRef(false);
   /** Shown if wiping the clipboard was blocked by the browser. */
@@ -286,7 +298,10 @@ export function App({ children }: { children?: React.ReactNode }) {
       try {
         const user = await api.fetchMe(token);
         if (cancelled) return;
-        if (!user) return signOut("7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in.");
+        if (!user)
+          return signOut(
+            "7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in.",
+          );
         storage.token.set(token);
         if (clearClipboardAfterLogin.current) {
           clearClipboardAfterLogin.current = false;
@@ -322,69 +337,80 @@ export function App({ children }: { children?: React.ReactNode }) {
   const tags = useMemo(() => tagsFor(theme, customTags), [theme, customTags]);
 
   // ---- Searching ----
-  const runSearch = useCallback((row: SetEmote, opts?: Partial<SearchOptions>): Promise<SearchState> => {
-    const s = sessionRef.current;
-    if (!s) return Promise.reject(new Error("no session"));
-    const { alias } = row;
-    const o: SearchOptions = {
-      input: "",
-      exact: true,
-      tagged: true,
-      sortBy: s.params.sortBy,
-      ...opts,
-    };
-    // A blank box searches the emote's own (unaliased) name; an emote link or ID is looked up directly.
-    const linkedId = parseEmoteId(o.input);
-    const query = o.input.trim() || row.emote.defaultName;
-    const base = { ...o, query, items: [], total: 0, hidden: 0 };
-    // Only the latest search for an emote matters: cancel the one it replaces, request and all.
-    searchControllers.current.get(alias)?.abort();
-    const controller = new AbortController();
-    const { signal } = controller;
-    searchControllers.current.set(alias, controller);
-    // Keep the previous results while loading so the tiles don't blink out; the UI dims them under a spinner.
-    setSearches((prev) => ({
-      ...prev,
-      [alias]: { ...base, items: prev[alias]?.items ?? [], status: "loading" },
-    }));
-    // The base emote is already offered as its own tile. Private and deleted emotes can't be added, so
-    // they're dropped (and counted) rather than offered.
-    const usable = (found: SearchResult[]) => {
-      const others = found.filter((e) => e.id !== row.emote.id);
-      const items = others.filter((e) => !e.deleted && !e.flags.private);
-      return { items, hidden: others.length - items.length };
-    };
-    const p = searchLimit(async (): Promise<SearchState> => {
-      signal.throwIfAborted(); // cancelled while queued: don't spend quota
-      if (linkedId) {
-        // Exact lookup first; filters don't apply to a specific emote.
-        const emote = await api.fetchEmoteById(linkedId, s.target.id, undefined, signal).catch((e) => {
-          if (signal.aborted) throw e;
-          return null;
-        });
-        if (emote) return { ...base, status: "done", via: "link", total: 1, ...usable([emote]) };
-      }
-      const res = await api.searchEmotes(
-        { query, tags: o.tagged ? s.tags : [], sortBy: o.sortBy, exactMatch: o.exact, targetSetId: s.target.id },
-        undefined,
-        signal,
-      );
-      return {
-        ...base,
-        status: "done",
-        via: linkedId ? "link-missing" : undefined,
-        total: res.total,
-        ...usable(res.items),
+  const runSearch = useCallback(
+    (row: SetEmote, opts?: Partial<SearchOptions>): Promise<SearchState> => {
+      const s = sessionRef.current;
+      if (!s) return Promise.reject(new Error("no session"));
+      const { alias } = row;
+      const o: SearchOptions = {
+        input: "",
+        exact: true,
+        tagged: true,
+        sortBy: s.params.sortBy,
+        ...opts,
       };
-    })
-      .catch((e): SearchState => ({ ...base, status: "error", error: friendlyError(e) }))
-      .then((state) => {
-        if (!signal.aborted) setSearches((prev) => ({ ...prev, [alias]: state }));
-        return state;
-      });
-    searchPromises.current.set(alias, p);
-    return p;
-  }, [api]);
+      // A blank box searches the emote's own (unaliased) name; an emote link or ID is looked up directly.
+      const linkedId = parseEmoteId(o.input);
+      const query = o.input.trim() || row.emote.defaultName;
+      const base = { ...o, query, items: [], total: 0, hidden: 0 };
+      // Only the latest search for an emote matters: cancel the one it replaces, request and all.
+      searchControllers.current.get(alias)?.abort();
+      const controller = new AbortController();
+      const { signal } = controller;
+      searchControllers.current.set(alias, controller);
+      // Keep the previous results while loading so the tiles don't blink out; the UI dims them under a spinner.
+      setSearches((prev) => ({
+        ...prev,
+        [alias]: { ...base, items: prev[alias]?.items ?? [], status: "loading" },
+      }));
+      // The base emote is already offered as its own tile. Private and deleted emotes can't be added, so
+      // they're dropped (and counted) rather than offered.
+      const usable = (found: SearchResult[]) => {
+        const others = found.filter((e) => e.id !== row.emote.id);
+        const items = others.filter((e) => !e.deleted && !e.flags.private);
+        return { items, hidden: others.length - items.length };
+      };
+      const p = searchLimit(async (): Promise<SearchState> => {
+        signal.throwIfAborted(); // cancelled while queued: don't spend quota
+        if (linkedId) {
+          // Exact lookup first; filters don't apply to a specific emote.
+          const emote = await api
+            .fetchEmoteById(linkedId, s.target.id, undefined, signal)
+            .catch((e) => {
+              if (signal.aborted) throw e;
+              return null;
+            });
+          if (emote) return { ...base, status: "done", via: "link", total: 1, ...usable([emote]) };
+        }
+        const res = await api.searchEmotes(
+          {
+            query,
+            tags: o.tagged ? s.tags : [],
+            sortBy: o.sortBy,
+            exactMatch: o.exact,
+            targetSetId: s.target.id,
+          },
+          undefined,
+          signal,
+        );
+        return {
+          ...base,
+          status: "done",
+          via: linkedId ? "link-missing" : undefined,
+          total: res.total,
+          ...usable(res.items),
+        };
+      })
+        .catch((e): SearchState => ({ ...base, status: "error", error: friendlyError(e) }))
+        .then((state) => {
+          if (!signal.aborted) setSearches((prev) => ({ ...prev, [alias]: state }));
+          return state;
+        });
+      searchPromises.current.set(alias, p);
+      return p;
+    },
+    [api],
+  );
 
   // ---- Start / resume a mapping ----
   const startMapping = useCallback(
@@ -412,9 +438,11 @@ export function App({ children }: { children?: React.ReactNode }) {
         ]);
         if (!source) throw new Error("Your base set no longer exists.");
         if (!target) throw new Error("Your seasonal set no longer exists.");
-        if (!me.editableEmoteSetIds.includes(target.id)) throw new Error("You can't edit that seasonal set.");
+        if (!me.editableEmoteSetIds.includes(target.id))
+          throw new Error("You can't edit that seasonal set.");
         // An emote counts as already mapped when the target has something under the same name (alias).
-        const byAlias = (a: SetEmote, b: SetEmote) => a.alias.localeCompare(b.alias, undefined, { sensitivity: "base" });
+        const byAlias = (a: SetEmote, b: SetEmote) =>
+          a.alias.localeCompare(b.alias, undefined, { sensitivity: "base" });
         const entries = new Map(targetEmotes.map((e) => [e.alias, e]));
         const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).sort(byAlias);
         const mappedRows = sourceEmotes.filter((e) => entries.has(e.alias)).sort(byAlias);
@@ -436,9 +464,12 @@ export function App({ children }: { children?: React.ReactNode }) {
         const restored = saved?.choices ?? {};
         // Resume where the user was. Names are looked up rather than positions, because emotes move between
         // sections as they get added (e.g. a pending emote added before the reload is now "mapped").
-        const doneAt = (section: Section) => steps.findIndex((st) => st.kind === "done" && st.section === section);
+        const doneAt = (section: Section) =>
+          steps.findIndex((st) => st.kind === "done" && st.section === section);
         const savedDone = saved?.atDone;
-        const aliasAt = saved?.currentAlias ? steps.findIndex((st) => stepAlias(st) === saved.currentAlias) : -1;
+        const aliasAt = saved?.currentAlias
+          ? steps.findIndex((st) => stepAlias(st) === saved.currentAlias)
+          : -1;
         const firstUndecided = s.pending.findIndex((r) => !restored[r.alias]);
         const step =
           savedDone && doneAt(savedDone) >= 0
@@ -458,7 +489,9 @@ export function App({ children }: { children?: React.ReactNode }) {
         resetSession();
         sessionRef.current = s;
         setTargetEntries(
-          Object.fromEntries([...mappedRows, ...extraRows].map((r) => [r.alias, entries.get(r.alias)!])),
+          Object.fromEntries(
+            [...mappedRows, ...extraRows].map((r) => [r.alias, entries.get(r.alias)!]),
+          ),
         );
         setChoices(restored);
         setRemoved(removed);
@@ -470,7 +503,9 @@ export function App({ children }: { children?: React.ReactNode }) {
           const current = entries.get(first.alias)?.emote;
           const ready = runSearch(first).then((st) =>
             Promise.all(
-              [first.emote, current, ...st.items].flatMap((e) => (e ? [preloadImage(emoteImage(e.id, 3))] : [])),
+              [first.emote, current, ...st.items].flatMap((e) =>
+                e ? [preloadImage(emoteImage(e.id, 3))] : [],
+              ),
             ),
           );
           await Promise.race([ready, sleep(FIRST_CARD_BUDGET_MS)]);
@@ -500,7 +535,10 @@ export function App({ children }: { children?: React.ReactNode }) {
   const stepCount = steps.length;
   const step = steps[index] as Step | undefined;
   const pendingDoneStep = steps.findIndex((st) => st.kind === "done" && st.section === "pending");
-  const stepOfAlias = useCallback((alias: string) => steps.findIndex((st) => stepAlias(st) === alias), [steps]);
+  const stepOfAlias = useCallback(
+    (alias: string) => steps.findIndex((st) => stepAlias(st) === alias),
+    [steps],
+  );
   const rowAtStep = useCallback((i: number) => stepRow(steps[i]), [steps]);
   const doneStep = step?.kind === "done" ? step : undefined;
   const section = step ? stepSection(step) : "pending";
@@ -508,7 +546,10 @@ export function App({ children }: { children?: React.ReactNode }) {
   const sections = useMemo(() => [...new Set(steps.map(stepSection))], [steps]);
   /** The emote on screen: a base emote, or (in "Not in base") a seasonal-set entry. */
   const current = stepRow(step);
-  const mappedAliases = useMemo(() => new Set((session?.mapped ?? []).map((r) => r.alias)), [session]);
+  const mappedAliases = useMemo(
+    () => new Set((session?.mapped ?? []).map((r) => r.alias)),
+    [session],
+  );
   const isMapped = (alias: string) => mappedAliases.has(alias);
   const extraAliases = useMemo(() => new Set(extras.map((e) => e.alias)), [extras]);
   const isExtra = (alias: string) => extraAliases.has(alias);
@@ -557,7 +598,9 @@ export function App({ children }: { children?: React.ReactNode }) {
   const autoSearchTimes = useRef<number[]>([]);
   const steppingFast = useCallback(() => {
     const now = Date.now();
-    autoSearchTimes.current = autoSearchTimes.current.filter((t) => now - t < AUTO_SEARCH_WINDOW_MS);
+    autoSearchTimes.current = autoSearchTimes.current.filter(
+      (t) => now - t < AUTO_SEARCH_WINDOW_MS,
+    );
     return autoSearchTimes.current.length >= AUTO_SEARCH_BURST;
   }, []);
   const autoSearch = useCallback(
@@ -602,7 +645,8 @@ export function App({ children }: { children?: React.ReactNode }) {
   }, [session, current, index, rowAtStep, autoSearch, steppingFast]);
 
   const navigate = useCallback(
-    (delta: number) => setIndex((i) => Math.min(Math.max(0, i + delta), Math.max(0, stepCount - 1))),
+    (delta: number) =>
+      setIndex((i) => Math.min(Math.max(0, i + delta), Math.max(0, stepCount - 1))),
     [stepCount],
   );
 
@@ -634,7 +678,8 @@ export function App({ children }: { children?: React.ReactNode }) {
 
   // ---- Applying ----
   /** Names not in the target yet default to the original; names already in it default to staying as-is. */
-  const choiceOf = (alias: string): Choice => choices[alias] ?? (targetEntries[alias] ? KEEP : ORIGINAL);
+  const choiceOf = (alias: string): Choice =>
+    choices[alias] ?? (targetEntries[alias] ? KEEP : ORIGINAL);
   /** What saving does with this row (see outcome() in lib/mapping.ts). */
   const outcomeOf = (row: SetEmote) => outcome(row, choiceOf(row.alias), targetEntries[row.alias]);
   /** The emote this row ends up as in the target (null = removed or not copied). */
@@ -655,7 +700,9 @@ export function App({ children }: { children?: React.ReactNode }) {
   const changeNote = (rs: SetEmote[]) => {
     const swapping = rs.filter(isSwap).length;
     const removing = rs.filter((r) => outcomeOf(r).kind === "remove").length;
-    const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`].filter(Boolean);
+    const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`].filter(
+      Boolean,
+    );
     return parts.length ? ` (${parts.join(", ")})` : "";
   };
 
@@ -681,10 +728,12 @@ export function App({ children }: { children?: React.ReactNode }) {
     const counts = { replace: 0, original: 0, exclude: 0, undecided: 0, remove: 0, errors: 0 };
     for (const r of pending) {
       const c = choices[r.alias];
-      if (c && (c.kind === "replace" || c.kind === "original" || c.kind === "exclude")) counts[c.kind]++;
+      if (c && (c.kind === "replace" || c.kind === "original" || c.kind === "exclude"))
+        counts[c.kind]++;
       else if (!targetEntries[r.alias]) counts.undecided++; // already-added emotes don't need reviewing
     }
-    for (const r of allRows) if (choices[r.alias]?.kind === "remove" && targetEntries[r.alias]) counts.remove++;
+    for (const r of allRows)
+      if (choices[r.alias]?.kind === "remove" && targetEntries[r.alias]) counts.remove++;
     for (const r of allRows) if (applyStates[r.alias]?.state === "error") counts.errors++;
     return counts;
   }, [pending, allRows, choices, targetEntries, applyStates]);
@@ -717,13 +766,19 @@ export function App({ children }: { children?: React.ReactNode }) {
     try {
       setPreparing(true);
       try {
-        const [info, emotes] = await Promise.all([api.fetchSetInfo(s.target.id, token), api.fetchSetEmotes(s.target.id, token)]);
+        const [info, emotes] = await Promise.all([
+          api.fetchSetInfo(s.target.id, token),
+          api.fetchSetEmotes(s.target.id, token),
+        ]);
         if (!info) throw new Error("Your seasonal set no longer exists.");
         fresh = emotes;
         freshCapacity = info.capacity;
       } catch (e) {
         setPreparing(false);
-        await saveStep({ title: `Couldn't check ${s.target.name}`, body: <ErrorText message={friendlyError(e)} /> });
+        await saveStep({
+          title: `Couldn't check ${s.target.name}`,
+          body: <ErrorText message={friendlyError(e)} />,
+        });
         return;
       }
       setPreparing(false);
@@ -769,7 +824,8 @@ export function App({ children }: { children?: React.ReactNode }) {
         for (const r of stale)
           next[r.alias] = {
             state: "error",
-            message: "Someone changed this one on 7TV after you loaded it, so it was left alone. Reload to see what's there now.",
+            message:
+              "Someone changed this one on 7TV after you loaded it, so it was left alone. Reload to see what's there now.",
           };
         return next;
       });
@@ -786,7 +842,8 @@ export function App({ children }: { children?: React.ReactNode }) {
       }
 
       const used = usedSlots(fresh);
-      const slotsNeeded = toAdd.length + toSwap.filter((r) => targetEntries[r.alias]?.emote.deleted).length;
+      const slotsNeeded =
+        toAdd.length + toSwap.filter((r) => targetEntries[r.alias]?.emote.deleted).length;
       // Removals run first, so the slots they free count towards the space available.
       const freed = toRemove.filter((e) => !e.emote.deleted).length;
       const free = freshCapacity == null ? Infinity : Math.max(0, freshCapacity - used + freed);
@@ -796,12 +853,13 @@ export function App({ children }: { children?: React.ReactNode }) {
           body: (
             <>
               <p>
-                It has {plural(free, "free slot")} ({used} of {freshCapacity} used), but {plural(slotsNeeded, "emote")}{" "}
-                still need one
+                It has {plural(free, "free slot")} ({used} of {freshCapacity} used), but{" "}
+                {plural(slotsNeeded, "emote")} still need one
                 {freed ? `, even counting the ${plural(freed, "emote")} you're removing` : ""}.
               </p>
               <p>
-                Skip at least {slotsNeeded - free} more, or raise the set&apos;s capacity on 7tv.app.
+                Skip at least {slotsNeeded - free} more, or raise the set&apos;s capacity on
+                7tv.app.
               </p>
             </>
           ),
@@ -855,7 +913,8 @@ export function App({ children }: { children?: React.ReactNode }) {
       let full = false;
       let fatal: string | null = null;
       // Re-apply the source alias, but only when it differs from the new emote's own name.
-      const aliasFor = (row: SetEmote, emote: EmoteSummary) => (row.alias !== emote.defaultName ? row.alias : undefined);
+      const aliasFor = (row: SetEmote, emote: EmoteSummary) =>
+        row.alias !== emote.defaultName ? row.alias : undefined;
       const fail = (row: SetEmote, e: unknown, suffix = "") => {
         failed++;
         const message = friendlyError(e) + suffix;
@@ -892,7 +951,12 @@ export function App({ children }: { children?: React.ReactNode }) {
         try {
           await api.addEmoteToSet(token, s.target.id, emote.id, aliasFor(row, emote), zeroWidth);
           added++;
-          setTargetEntry(row.alias, { id: emote.id, alias: row.alias, flags: { zeroWidth }, emote });
+          setTargetEntry(row.alias, {
+            id: emote.id,
+            alias: row.alias,
+            flags: { zeroWidth },
+            emote,
+          });
           if (interrupted) journal(s, row.alias, null);
           setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "added" } }));
         } catch (e) {
@@ -916,7 +980,13 @@ export function App({ children }: { children?: React.ReactNode }) {
           continue;
         }
         try {
-          await api.addEmoteToSet(token, s.target.id, emote.id, aliasFor(row, emote), cur.flags.zeroWidth);
+          await api.addEmoteToSet(
+            token,
+            s.target.id,
+            emote.id,
+            aliasFor(row, emote),
+            cur.flags.zeroWidth,
+          );
           swapped++;
           journal(s, row.alias, null);
           setTargetEntry(row.alias, { ...cur, id: emote.id, emote });
@@ -925,7 +995,13 @@ export function App({ children }: { children?: React.ReactNode }) {
         } catch (e) {
           let restored = false;
           try {
-            await api.addEmoteToSet(token, s.target.id, cur.emote.id, aliasFor(row, cur.emote), cur.flags.zeroWidth);
+            await api.addEmoteToSet(
+              token,
+              s.target.id,
+              cur.emote.id,
+              aliasFor(row, cur.emote),
+              cur.flags.zeroWidth,
+            );
             restored = true;
             journal(s, row.alias, null);
           } catch {
@@ -948,10 +1024,13 @@ export function App({ children }: { children?: React.ReactNode }) {
       setApplying(false);
 
       if (sessionRef.current !== s) return; // cancelled mid-run
-      const done =
-        [`${added} added`, swapped && `${swapped} swapped`, removedN && `${removedN} removed`]
-          .filter(Boolean)
-          .join(", ");
+      const done = [
+        `${added} added`,
+        swapped && `${swapped} swapped`,
+        removedN && `${removedN} removed`,
+      ]
+        .filter(Boolean)
+        .join(", ");
       if (failed || stale.length) setFilter("errors");
       if (full) {
         await saveStep({
@@ -963,8 +1042,8 @@ export function App({ children }: { children?: React.ReactNode }) {
           title: "Stopped early",
           body: (
             <>
-              <ErrorText message={fatal} /> ({done} before that.) Your picks are saved, so you can carry on once
-              it&apos;s sorted.
+              <ErrorText message={fatal} /> ({done} before that.) Your picks are saved, so you can
+              carry on once it&apos;s sorted.
             </>
           ),
         });
@@ -997,7 +1076,9 @@ export function App({ children }: { children?: React.ReactNode }) {
       : "";
     await saveStep({
       title: `${s.target.name} is up to date`,
-      body: summary ? `${summary[0].toUpperCase()}${summary.slice(1)}.` : "Nothing needed changing.",
+      body: summary
+        ? `${summary[0].toUpperCase()}${summary.slice(1)}.`
+        : "Nothing needed changing.",
       okLabel: "Done",
       dismissable: false,
     });
@@ -1074,7 +1155,9 @@ export function App({ children }: { children?: React.ReactNode }) {
   // Mid-save the journal holds the swap in flight, which isn't an interruption.
   const interrupted = applying ? [] : Object.keys(removed);
   /** Finished (or failed) changes from the latest save; ones skipped by Stop never leave "queued". */
-  const runDone = run?.filter((a) => !["queued", "running"].includes(applyStates[a]?.state ?? "queued")).length ?? 0;
+  const runDone =
+    run?.filter((a) => !["queued", "running"].includes(applyStates[a]?.state ?? "queued")).length ??
+    0;
 
   /** The card for the current step. */
   const card = !session ? null : doneStep ? (
@@ -1138,7 +1221,9 @@ export function App({ children }: { children?: React.ReactNode }) {
       {/* The demo's account is fake, so there's no user (or Sign out) to show. */}
       {me && mode === "live" && (
         <div className="me">
-          {me.mainConnection?.platformAvatarUrl && <Image src={me.mainConnection.platformAvatarUrl} alt="" />}
+          {me.mainConnection?.platformAvatarUrl && (
+            <Image src={me.mainConnection.platformAvatarUrl} alt="" />
+          )}
           <span>{me.mainConnection?.platformDisplayName ?? me.id}</span>
           <Button className="link-button" onPress={() => signOut()}>
             Sign out
@@ -1182,7 +1267,9 @@ export function App({ children }: { children?: React.ReactNode }) {
                 )}
               </ProgressBar>
               {pause && pause.bucket !== "search" && (
-                <p className="notice small">7TV asked us to slow down. Carrying on in {pause.seconds}s.</p>
+                <p className="notice small">
+                  7TV asked us to slow down. Carrying on in {pause.seconds}s.
+                </p>
               )}
             </>
           ) : (
@@ -1193,8 +1280,8 @@ export function App({ children }: { children?: React.ReactNode }) {
         {me && clipboardWarning && (
           <div className="card narrow notice-card" role="alert">
             <span>
-              Your browser didn&apos;t let us clear your clipboard, so your token may still be on it. Copy something else
-              to overwrite it.
+              Your browser didn&apos;t let us clear your clipboard, so your token may still be on
+              it. Copy something else to overwrite it.
             </span>
             <Button className="link-button" onPress={() => setClipboardWarning(false)}>
               Dismiss
@@ -1230,7 +1317,8 @@ export function App({ children }: { children?: React.ReactNode }) {
             <section className="card toolbar" aria-label="Your progress">
               <div className="summary">
                 <div className="pair">
-                  <b>{session.source.name}</b> <span className="muted">→</span> <b>{session.target.name}</b>
+                  <b>{session.source.name}</b> <span className="muted">→</span>{" "}
+                  <b>{session.target.name}</b>
                 </div>
                 <div className="muted small">
                   Looking for emotes tagged {session.tags.join(" or ")}, sorted by{" "}
@@ -1263,7 +1351,9 @@ export function App({ children }: { children?: React.ReactNode }) {
                   )}
                   {capacity != null && free != null && (
                     <span className={free < 0 ? "error" : "muted"}>
-                      {free < 0 ? `${-free} over capacity` : `${plural(free, "slot")} left after saving`}
+                      {free < 0
+                        ? `${-free} over capacity`
+                        : `${plural(free, "slot")} left after saving`}
                     </span>
                   )}
                 </div>
@@ -1277,7 +1367,8 @@ export function App({ children }: { children?: React.ReactNode }) {
                 <Button className="btn primary" onPress={apply} isDisabled={preparing || applying}>
                   {preparing ? (
                     <>
-                      <Spinner label="Checking your seasonal set" size="sm" /> Checking your seasonal set…
+                      <Spinner label="Checking your seasonal set" size="sm" /> Checking your
+                      seasonal set…
                     </>
                   ) : (
                     applyLabel
@@ -1295,7 +1386,10 @@ export function App({ children }: { children?: React.ReactNode }) {
                       applyStates[r.alias]?.state === "error"
                         ? [
                             <li key={r.alias}>
-                              <Button className="link-button" onPress={() => setIndex(stepOfAlias(r.alias))}>
+                              <Button
+                                className="link-button"
+                                onPress={() => setIndex(stepOfAlias(r.alias))}
+                              >
                                 {r.alias}
                               </Button>
                               : <ErrorText message={applyStates[r.alias]?.message ?? ""} />
@@ -1308,9 +1402,10 @@ export function App({ children }: { children?: React.ReactNode }) {
               )}
               {interrupted.length > 0 && (
                 <div className="alert small" role="alert">
-                  {interrupted.length === 1 ? "A swap" : `${interrupted.length} swaps`} didn&apos;t finish (
-                  {interrupted.join(", ")}): the old emote came out but the new one didn&apos;t go in yet. Save again to
-                  finish, or pick the <i>previous</i> emote to put it back.
+                  {interrupted.length === 1 ? "A swap" : `${interrupted.length} swaps`} didn&apos;t
+                  finish ({interrupted.join(", ")}): the old emote came out but the new one
+                  didn&apos;t go in yet. Save again to finish, or pick the <i>previous</i> emote to
+                  put it back.
                 </div>
               )}
               {pause && (
@@ -1332,7 +1427,8 @@ export function App({ children }: { children?: React.ReactNode }) {
                 <TabList className="section-tab-list" aria-label="Sections">
                   {sections.map((sec) => (
                     <Tab key={sec} id={sec} className="section-tab">
-                      {sectionTitle[sec]} <span className="section-tab-count">{sectionSize[sec]}</span>
+                      {sectionTitle[sec]}{" "}
+                      <span className="section-tab-count">{sectionSize[sec]}</span>
                     </Tab>
                   ))}
                 </TabList>
@@ -1419,7 +1515,9 @@ export function App({ children }: { children?: React.ReactNode }) {
                 items={themeItems}
                 value={theme}
                 onChange={(id) => setTheme(id as Theme)}
-                description={theme === "custom" ? undefined : `Search for emotes tagged ${tags.join(" or ")}`}
+                description={
+                  theme === "custom" ? undefined : `Search for emotes tagged ${tags.join(" or ")}`
+                }
               />
               {theme === "custom" && (
                 <TextField className="field" value={customTags} onChange={setCustomTags}>
@@ -1440,7 +1538,9 @@ export function App({ children }: { children?: React.ReactNode }) {
                 isDisabled={!sourceId || !targetId || sourceId === targetId || !tags.length}
                 isPending={loading}
                 onPress={() =>
-                  sourceId && targetId && void startMapping({ sourceId, targetId, theme, customTags, sortBy })
+                  sourceId &&
+                  targetId &&
+                  void startMapping({ sourceId, targetId, theme, customTags, sortBy })
                 }
               >
                 {({ isPending }) => (
@@ -1451,13 +1551,18 @@ export function App({ children }: { children?: React.ReactNode }) {
                 )}
               </Button>
               {sourceId && sourceId === targetId && (
-                <span className="error small">Your base and seasonal sets need to be different.</span>
+                <span className="error small">
+                  Your base and seasonal sets need to be different.
+                </span>
               )}
-              {theme === "custom" && !tags.length && <span className="muted small">Add at least one tag.</span>}
+              {theme === "custom" && !tags.length && (
+                <span className="muted small">Add at least one tag.</span>
+              )}
               {loadError && <span className="error small">{loadError}</span>}
               {sets.length === 0 && (
                 <span className="muted small">
-                  You can&apos;t edit any emote sets yet. Create your seasonal set on 7tv.app, then reload.
+                  You can&apos;t edit any emote sets yet. Create your seasonal set on 7tv.app, then
+                  reload.
                 </span>
               )}
             </div>

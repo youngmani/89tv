@@ -4,11 +4,11 @@
  * https://developers.cloudflare.com/workers/static-assets/
  */
 {
-	"name": "89tv",
-	"compatibility_date": "2026-10-01",
-	"assets": {
-		"directory": "./out",
-		// Next's export writes 404.html; serve it for unknown paths.
-		"not_found_handling": "404-page"
-	}
+  "name": "89tv",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./out",
+    // Next's export writes 404.html; serve it for unknown paths.
+    "not_found_handling": "404-page",
+  },
 }

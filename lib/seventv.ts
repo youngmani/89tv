@@ -15,7 +15,6 @@ export class ApiError extends Error {
   }
 }
 
-
 // 7TV rate limits per bucket (e.g. "search": 100 per window, "global"). When a bucket is exhausted the API
 // answers HTTP 200 with a RATE_LIMIT_EXCEEDED GraphQL error whose extensions.headers carry
 // x-ratelimit-<bucket>-reset. Requests in that bucket then wait out the reset instead of retrying — 7TV
@@ -91,7 +90,11 @@ export async function gql<T>(
         await sleep(Math.max(0, until - Date.now()), signal);
         continue;
       }
-      throw new ApiError(e.extensions?.message ?? e.message, e.extensions?.code, e.extensions?.status);
+      throw new ApiError(
+        e.extensions?.message ?? e.message,
+        e.extensions?.code,
+        e.extensions?.status,
+      );
     }
     if (!res.ok || !body?.data) {
       throw new ApiError(body?.error ?? `HTTP ${res.status}`, undefined, res.status);
@@ -133,13 +136,20 @@ export interface Me {
   editableEmoteSetIds: string[];
 }
 
-export type SortBy = "TOP_ALL_TIME" | "TOP_MONTHLY" | "TRENDING_MONTHLY" | "TRENDING_WEEKLY" | "UPLOAD_DATE";
+export type SortBy =
+  | "TOP_ALL_TIME"
+  | "TOP_MONTHLY"
+  | "TRENDING_MONTHLY"
+  | "TRENDING_WEEKLY"
+  | "UPLOAD_DATE";
 
 // ---------- Helpers ----------
 
-export const emoteImage = (id: string, size: 1 | 2 | 3 | 4 = 2) => `https://cdn.7tv.app/emote/${id}/${size}x.webp`;
+export const emoteImage = (id: string, size: 1 | 2 | 3 | 4 = 2) =>
+  `https://cdn.7tv.app/emote/${id}/${size}x.webp`;
 export const emotePage = (id: string) => `https://7tv.app/emotes/${id}`;
-export const ownerName = (o: { owner: EmoteSummary["owner"] }) => o.owner?.mainConnection?.platformDisplayName ?? "unknown";
+export const ownerName = (o: { owner: EmoteSummary["owner"] }) =>
+  o.owner?.mainConnection?.platformDisplayName ?? "unknown";
 
 /**
  * An emote ID from what the user typed: a bare ID, or a link containing one (7tv.app/emotes/<id>,
@@ -182,7 +192,10 @@ export async function fetchSetInfos(ids: string[], token?: string | null): Promi
   return d.emoteSets.emoteSets;
 }
 
-export async function fetchSetInfo(id: string, token?: string | null): Promise<EmoteSetInfo | null> {
+export async function fetchSetInfo(
+  id: string,
+  token?: string | null,
+): Promise<EmoteSetInfo | null> {
   const d = await gql<{ emoteSets: { emoteSet: EmoteSetInfo | null } }>(
     `query Set($id: Id!) { emoteSets { emoteSet(id: $id) { ${SET_INFO_FIELDS} } } }`,
     { id },
@@ -237,7 +250,8 @@ const withInTarget = ({ inEmoteSets, ...e }: EmoteWithSets): SearchResult => ({
  * `$setIds` is a required variable even when `inEmoteSets` is skipped (`@include(if: false)`), and 7TV rejects
  * an empty list, so this placeholder is sent when there's no target set.
  */
-const setIdsFor = (targetSetId: string | undefined) => (targetSetId ? [targetSetId] : ["00000000000000000000000000"]);
+const setIdsFor = (targetSetId: string | undefined) =>
+  targetSetId ? [targetSetId] : ["00000000000000000000000000"];
 
 // Note: windowed sorts (TRENDING_*, TOP_MONTHLY) also filter, returning only emotes with activity in that
 // window (e.g. "catJAM" + halloween: 1 result trending vs 6 all-time). That's intended.
@@ -310,7 +324,12 @@ export async function addEmoteToSet(
 }
 
 /** Removes one entry (emote + alias) from a set. Only used to swap an existing mapping the user changed. */
-export async function removeEmoteFromSet(token: string, setId: string, emoteId: string, alias: string): Promise<void> {
+export async function removeEmoteFromSet(
+  token: string,
+  setId: string,
+  emoteId: string,
+  alias: string,
+): Promise<void> {
   await gql(
     `mutation RemoveEmote($setId: Id!, $id: EmoteSetEmoteId!) {
       emoteSets { emoteSet(id: $setId) { removeEmote(id: $id) { id } } }
@@ -323,11 +342,14 @@ export async function removeEmoteFromSet(token: string, setId: string, emoteId: 
 
 // Error messages from the 7TV API's addEmote (apps/api/src/http/v4/gql/mutations/emote_set/operation.rs).
 export const isCapacityError = (e: unknown) => e instanceof Error && /at capacity/i.test(e.message);
-export const isConflictError = (e: unknown) => e instanceof Error && /conflicting name/i.test(e.message);
+export const isConflictError = (e: unknown) =>
+  e instanceof Error && /conflicting name/i.test(e.message);
 
 /** Failures specific to one emote; the rest of a batch can still go through. */
 export const isEmoteLevelError = (e: unknown) =>
-  isConflictError(e) || (e instanceof Error && /emote is private|emote not found|not allowed in personal/i.test(e.message));
+  isConflictError(e) ||
+  (e instanceof Error &&
+    /emote is private|emote not found|not allowed in personal/i.test(e.message));
 
 /** Turns API and network failures into a sentence a user can act on. */
 export function friendlyError(e: unknown): string {
@@ -335,13 +357,17 @@ export function friendlyError(e: unknown): string {
   const code = e instanceof ApiError ? e.code : undefined;
   if (isCapacityError(e)) return "Your seasonal set is full.";
   if (isConflictError(e)) return "Your seasonal set already has an emote with this name.";
-  if (/emote is private/i.test(msg)) return "This emote is private, so it can't be added. Pick a different one.";
-  if (/emote not found/i.test(msg)) return "This emote has been deleted from 7TV. Pick a different one.";
+  if (/emote is private/i.test(msg))
+    return "This emote is private, so it can't be added. Pick a different one.";
+  if (/emote not found/i.test(msg))
+    return "This emote has been deleted from 7TV. Pick a different one.";
   if (/emote set not found/i.test(msg)) return "Your seasonal set no longer exists.";
-  if (code === "UNAUTHORIZED" || code === "LOGIN_REQUIRED") return "Your 7TV session expired. Log in again to keep going.";
+  if (code === "UNAUTHORIZED" || code === "LOGIN_REQUIRED")
+    return "Your 7TV session expired. Log in again to keep going.";
   if (code === "LACKING_PRIVILEGES" || (e instanceof ApiError && e.status === 403))
     return "You can't edit your seasonal set anymore.";
-  if (code === "RATE_LIMIT_EXCEEDED") return "7TV asked us to slow down. Wait a moment and try again.";
+  if (code === "RATE_LIMIT_EXCEEDED")
+    return "7TV asked us to slow down. Wait a moment and try again.";
   if (e instanceof TypeError) return "Couldn't reach 7TV. Check your connection and try again.";
   return msg.replace(/^[A-Z_]+ /, ""); // strip the "CODE " prefix 7TV puts on messages
 }

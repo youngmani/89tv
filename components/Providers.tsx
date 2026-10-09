@@ -15,7 +15,10 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 export function Providers({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   return (
-    <RouterProvider navigate={router.push} useHref={(href) => (href.startsWith("/") ? basePath + href : href)}>
+    <RouterProvider
+      navigate={router.push}
+      useHref={(href) => (href.startsWith("/") ? basePath + href : href)}
+    >
       {children}
     </RouterProvider>
   );

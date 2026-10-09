@@ -65,7 +65,14 @@ export function MappingSummary({
   const everything = !next && multiSection;
   useArrowKeys(canPrev, !!next, onNavigate);
 
-  const nothing = counts.replace + counts.original + counts.exclude + counts.undecided + swapCount + removeCount === 0;
+  const nothing =
+    counts.replace +
+      counts.original +
+      counts.exclude +
+      counts.undecided +
+      swapCount +
+      removeCount ===
+    0;
   const recap = everything
     ? "You've seen every emote in both sets."
     : section === "pending"
@@ -75,7 +82,10 @@ export function MappingSummary({
         : "You've checked all the emotes not in your base set.";
 
   return (
-    <section className="card focus summary-step" aria-label={everything ? "That's everything" : "All done"}>
+    <section
+      className="card focus summary-step"
+      aria-label={everything ? "That's everything" : "All done"}
+    >
       <div className="focus-head">
         <Button
           className={`btn nav${canPrev ? "" : " invisible"}`}
@@ -106,7 +116,8 @@ export function MappingSummary({
         <p className="summary-counts muted">Nothing to change. Everything already matches.</p>
       ) : (
         <p className="summary-counts">
-          <b>{counts.replace}</b> seasonal · <b>{counts.original}</b> as-is · <b>{counts.exclude}</b> skipped
+          <b>{counts.replace}</b> seasonal · <b>{counts.original}</b> as-is ·{" "}
+          <b>{counts.exclude}</b> skipped
           {swapCount > 0 && (
             <>
               {" "}
@@ -123,8 +134,8 @@ export function MappingSummary({
       )}
       {section === "pending" && counts.undecided > 0 && (
         <p className="muted small">
-          {plural(counts.undecided, "emote")} {counts.undecided === 1 ? "is" : "are"} unreviewed and will be copied
-          as-is.{" "}
+          {plural(counts.undecided, "emote")} {counts.undecided === 1 ? "is" : "are"} unreviewed and
+          will be copied as-is.{" "}
           <Button className="link-button" onPress={onReviewUndecided}>
             Review them
           </Button>

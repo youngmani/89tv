@@ -12,13 +12,21 @@ interface Row {
 }
 
 /** The screen-reader description of a chip. */
-function describe(row: SetEmote, c: Choice | undefined, o: Outcome, a: ApplyState | undefined, extra: boolean) {
+function describe(
+  row: SetEmote,
+  c: Choice | undefined,
+  o: Outcome,
+  a: ApplyState | undefined,
+  extra: boolean,
+) {
   const where = extra ? "only in the seasonal set, " : "";
   let what: string;
-  if (o.kind === "remove") what = extra ? `${where}removing` : `removing ${o.current.defaultName} from the seasonal set`;
+  if (o.kind === "remove")
+    what = extra ? `${where}removing` : `removing ${o.current.defaultName} from the seasonal set`;
   else if (o.kind === "swap")
     what = `${where}swap ${o.current.defaultName} by ${ownerName(o.current)} for ${o.emote.defaultName} by ${ownerName(o.emote)}`;
-  else if (o.kind === "keep") what = extra ? `${where}keeping` : `already in the seasonal set as ${o.emote.defaultName}`;
+  else if (o.kind === "keep")
+    what = extra ? `${where}keeping` : `already in the seasonal set as ${o.emote.defaultName}`;
   else if (!c) what = "unreviewed";
   else if (o.kind === "skip") what = c.kind === "remove" ? `${where}removed` : "skipped";
   else if (o.emote.id !== row.emote.id) what = `seasonal pick: ${o.emote.defaultName}`;
@@ -82,7 +90,12 @@ function MappingOverviewImpl({
                       aria-label={`${row.alias}: ${describe(row, c, o, a, !!section.extra)}`}
                       aria-current={index === current ? "step" : undefined}
                     >
-                      <Image src={emoteImage(row.emote.id, 1)} alt="" loading="lazy" index={index} />
+                      <Image
+                        src={emoteImage(row.emote.id, 1)}
+                        alt=""
+                        loading="lazy"
+                        index={index}
+                      />
                       {!end ? (
                         <span className="arrow">✗</span>
                       ) : end.id !== row.emote.id ? (

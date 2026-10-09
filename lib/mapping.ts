@@ -76,7 +76,13 @@ export type Outcome =
 export function outcome(row: SetEmote, choice: Choice, current: SetEmote | undefined): Outcome {
   const cur = current?.emote;
   const want =
-    choice.kind === "replace" ? choice.emote : choice.kind === "original" ? row.emote : choice.kind === "keep" ? cur : undefined;
+    choice.kind === "replace"
+      ? choice.emote
+      : choice.kind === "original"
+        ? row.emote
+        : choice.kind === "keep"
+          ? cur
+          : undefined;
   if (!cur) return want ? { kind: "add", emote: want } : { kind: "skip" };
   if (choice.kind === "remove") return { kind: "remove", current: cur };
   // "exclude" only means something for a name that isn't there yet; on one that is, it leaves it alone.
@@ -116,7 +122,13 @@ export interface MappingParams {
 }
 
 /** Just the setup-form fields of a saved mapping (or anything else that has them). */
-export const mappingParams = ({ sourceId, targetId, theme, customTags, sortBy }: MappingParams): MappingParams => ({
+export const mappingParams = ({
+  sourceId,
+  targetId,
+  theme,
+  customTags,
+  sortBy,
+}: MappingParams): MappingParams => ({
   sourceId,
   targetId,
   theme,
