@@ -65,7 +65,6 @@
 }
 
 /* ---------- Base ---------- */
-* { box-sizing: border-box; }
 html, body { min-height: 100%; }
 body {
   margin: 0;
@@ -87,10 +86,11 @@ body {
 }
 main { flex: 1 0 auto; width: 100%; max-width: 1040px; margin: 0 auto; padding: 32px 16px 64px; }
 .site-footer { flex: none; text-align: center; padding: 16px 16px 24px; font-size: 13px; color: var(--muted); }
-h1, h2, h3 { line-height: 1.2; }
-h2 { margin: 0 0 8px; text-align: center; }
+h1, h2, h3 { line-height: 1.2; font-weight: 700; }
+h2 { margin: 0 0 8px; font-size: 1.5em; text-align: center; }
 h3 { margin: 0; font-size: 16px; }
 a, .react-aria-Link { color: var(--accent); }
+a { text-decoration: underline; }
 code { background: var(--panel-2); padding: 1px 6px; border-radius: 5px; font-size: 0.9em; }
 kbd {
   display: inline-block; min-width: 1.6em; text-align: center;
@@ -129,6 +129,9 @@ img { color: transparent; }
   transition: background-color 0.5s, border-color 0.5s;
 }
 .card.narrow { max-width: 600px; }
+/* Cards whose content is plain blocks (paragraphs, lists, button rows) stacked one under another. */
+.stack { display: flex; flex-direction: column; gap: 12px; }
+.stack > h2 { margin-bottom: 0; }
 
 /* ---------- Buttons ---------- */
 .btn {
@@ -199,7 +202,7 @@ img { color: transparent; }
 .checkbox[data-focus-visible] .box { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ---------- Token screen ---------- */
-.steps { padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
+.steps { list-style: decimal; padding-left: 22px; display: flex; flex-direction: column; gap: 10px; }
 .snippet {
   display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0 4px;
   background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 6px 6px 6px 12px;
@@ -323,7 +326,7 @@ img { color: transparent; }
 .dialog { padding: 22px; outline: none; text-align: center; }
 .dialog h2 { margin: 0 0 10px; font-size: 19px; }
 .dialog-body { color: var(--muted); }
-.dialog-body ul { text-align: left; display: inline-block; margin: 4px 0; padding-left: 20px; }
+.dialog-body ul { list-style: disc; text-align: left; display: inline-block; margin: 4px 0; padding-left: 20px; }
 .dialog-body p { margin: 0 0 8px; }
 .dialog-actions { display: flex; justify-content: center; gap: 8px; margin-top: 18px; }
 
@@ -339,7 +342,7 @@ img { color: transparent; }
   background: color-mix(in srgb, var(--err) 8%, transparent); border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
 }
 .problems h3 { color: var(--err); font-size: 14px; margin-bottom: 6px; }
-.problems ul { margin: 0; padding-left: 18px; max-height: 160px; overflow: auto; font-size: 13px; }
+.problems ul { list-style: disc; margin: 0; padding-left: 18px; max-height: 160px; overflow: auto; font-size: 13px; }
 .problems li { margin: 2px 0; }
 .tile .note { font-size: 10px; color: var(--accent); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -393,7 +396,7 @@ img { color: transparent; }
 [data-theme="neutral"] .logo-neutral { display: inline; }
 
 /* ---------- Login ---------- */
-.manual-token { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.manual-token { display: flex; flex-direction: column; gap: 8px; }
 .manual-token > .btn { align-self: center; min-width: 120px; }
 .notice-card { display: flex; gap: 12px; align-items: center; justify-content: space-between; color: var(--accent-2); font-size: 14px; }
 

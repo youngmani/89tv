@@ -159,6 +159,8 @@ export function App({ children }: { children?: React.ReactNode }) {
     setRemovedState(next);
   }, []);
   const [applying, setApplying] = useState(false);
+  /** Names changed by the latest save (adds, swaps and removals), for the progress bar. */
+  const [run, setRun] = useState<string[] | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [pause, setPause] = useState<{ bucket: string; seconds: number } | null>(null);
 
@@ -223,6 +225,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     setSession(null);
     setSearches({});
     setApplyStates({});
+    setRun(null);
     setTargetEntries({});
     removedRef.current = {};
     setRemovedState({});
@@ -799,6 +802,7 @@ export function App({ children }: { children?: React.ReactNode }) {
 
     stopRef.current = false;
     setApplying(true);
+    setRun([...toRemove, ...toAdd, ...toSwap].map((r) => r.alias));
     setApplyStates((prev) => {
       const next = { ...prev };
       for (const r of [...toRemove, ...toAdd, ...toSwap]) next[r.alias] = { state: "queued" };
@@ -983,7 +987,10 @@ export function App({ children }: { children?: React.ReactNode }) {
       : changeCount === plan.length
         ? `Add ${plural(plan.length, "emote")} to ${targetName}`
         : `Save ${plural(changeCount, "change")} to ${targetName}`;
-  const interrupted = Object.keys(removed);
+  // Mid-save the journal holds the swap in flight, which isn't an interruption.
+  const interrupted = applying ? [] : Object.keys(removed);
+  /** Finished (or failed) changes from the latest save; ones skipped by Stop never leave "queued". */
+  const runDone = run?.filter((a) => !["queued", "running"].includes(applyStates[a]?.state ?? "queued")).length ?? 0;
 
   const header = (
     <header className="top">
@@ -1039,7 +1046,7 @@ export function App({ children }: { children?: React.ReactNode }) {
           error={authError}
         />
       ) : account === "error" ? (
-        <section className="card narrow center" role="alert">
+        <section className="card narrow center stack" role="alert">
           <p>{me ? "Couldn't load your emote sets." : "Couldn't check your 7TV session."}</p>
           <p className="error">{authError}</p>
           <div className="buttons-row">
@@ -1161,12 +1168,12 @@ export function App({ children }: { children?: React.ReactNode }) {
                   : `7TV asked us to slow down. Carrying on in ${pause.seconds}s.`}
               </div>
             )}
-            {(applying || addedCount > 0) && (
+            {run && run.length > 0 && (
               <ProgressBar
                 className="progress"
                 aria-label={`Saving to ${targetName}`}
-                value={addedCount}
-                maxValue={addedCount + plan.length}
+                value={runDone}
+                maxValue={run.length}
               >
                 {({ percentage, valueText }) => (
                   <>
@@ -1261,7 +1268,7 @@ export function App({ children }: { children?: React.ReactNode }) {
       ) : (
         <>
           {completed && (
-            <section className="card narrow center done" role="status">
+            <section className="card narrow center done stack" role="status">
               <h2>{completed.target} is up to date</h2>
               <p>
                 {[
@@ -1277,7 +1284,7 @@ export function App({ children }: { children?: React.ReactNode }) {
           )}
 
           {resume ? (
-            <section className="card narrow center">
+            <section className="card narrow center stack">
               {loadError ? (
                 <>
                   <p>Couldn&apos;t pick up where you left off.</p>

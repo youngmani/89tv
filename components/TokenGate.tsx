@@ -124,7 +124,7 @@ export function TokenGate({ onToken, error }: { onToken: (t: string) => void; er
           </span>
         </div>
       )}
-    <section className="card narrow">
+    <section className="card narrow stack">
       <h2>Connect your 7TV account</h2>
       <p className="muted">
         7TV doesn't support third-party login, so this tool uses your existing 7tv.app session token. It stays
