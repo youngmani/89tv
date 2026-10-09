@@ -643,6 +643,14 @@ export function App({ children }: { children?: React.ReactNode }) {
     return o.kind === "remove" || o.kind === "skip" ? null : o.emote;
   };
   const isSwap = (row: SetEmote) => outcomeOf(row).kind === "swap";
+  /**
+   * For the filters, an already-added emote counts as a seasonal pick or a copy by what the target ends up with:
+   * a different emote than the base one, or the base emote itself. Removed ones are neither.
+   */
+  const mappedKind = (row: SetEmote): "replace" | "original" | null => {
+    const e = finalEmote(row);
+    return !e ? null : e.id === row.emote.id ? "original" : "replace";
+  };
   /** " (swapping 2, removing 1)" for these rows, or "" when none of them change. */
   const changeNote = (rs: SetEmote[]) => {
     const swapping = rs.filter(isSwap).length;
@@ -1005,7 +1013,8 @@ export function App({ children }: { children?: React.ReactNode }) {
     if (filter === "errors") return applyStates[row.alias]?.state === "error";
     if (filter === "changed") return isSwap(row);
     if (filter === "remove") return outcomeOf(row).kind === "remove";
-    if (isMapped(row.alias) || isExtra(row.alias)) return false;
+    if (isMapped(row.alias)) return mappedKind(row) === filter;
+    if (isExtra(row.alias)) return false;
     if (filter === "undecided") return !c;
     return c?.kind === filter;
   };
@@ -1032,12 +1041,17 @@ export function App({ children }: { children?: React.ReactNode }) {
     { title: sectionTitle.extra, rows: sectionRows("extra"), extra: true },
   ];
 
+  const mappedKinds = { replace: 0, original: 0 };
+  for (const r of session?.mapped ?? []) {
+    const k = mappedKind(r);
+    if (k) mappedKinds[k]++;
+  }
   const themeItems = Object.entries(THEMES).map(([id, t]) => ({ id, label: t.label }));
   const filterItems = [
     { id: "all", label: `All (${rows.length + extras.length})` },
     { id: "undecided", label: `Unreviewed (${stats.undecided})` },
-    { id: "replace", label: `Seasonal picks (${stats.replace})` },
-    { id: "original", label: `Copied as-is (${stats.original})` },
+    { id: "replace", label: `Seasonal picks (${stats.replace + mappedKinds.replace})` },
+    { id: "original", label: `Copied as-is (${stats.original + mappedKinds.original})` },
     { id: "exclude", label: `Skipped (${stats.exclude})` },
     ...(session?.mapped.length || extras.length || swaps.length
       ? [{ id: "changed", label: `Swapping (${swaps.length})` }]
