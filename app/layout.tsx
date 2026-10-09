@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
+import { Nunito } from "next/font/google";
 import { Footer } from "@/components/Footer";
 import { Providers } from "@/components/Providers";
 import "./preflight.css";
 import "./globals.css";
+
+// Self-hosted at build time (no requests to Google from visitors). The variable font covers every weight used.
+const nunito = Nunito({ subsets: ["latin"], variable: "--font-nunito" });
 
 export const metadata: Metadata = {
   title: "89TV",
@@ -11,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="halloween" suppressHydrationWarning>
+    <html lang="en" data-theme="halloween" className={nunito.variable} suppressHydrationWarning>
       <head>
         {/* Pick the palette before first paint (no flash): the in-progress mapping's theme if there is one
             (not on /demo, which doesn't use saved data and would otherwise flash), otherwise the season. Keep

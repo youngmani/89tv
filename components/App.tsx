@@ -1092,7 +1092,10 @@ export function App({ children }: { children?: React.ReactNode }) {
           <span className="logo-winter">❄️</span>
           <span className="logo-neutral">✨</span>
         </span>{" "}
-        89TV
+        {/* Styled like the favicon: the 9 in the accent colour, tucked into the 8. Reads as "89TV". */}
+        <span className="wordmark">
+          8<span className="nine">9</span>TV
+        </span>
       </h1>
       <p className="tagline">Make a seasonal copy of your 7TV emote set</p>
       {/* The demo's account is fake, so there's no user (or Sign out) to show. */}

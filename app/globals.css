@@ -76,7 +76,7 @@ body {
     radial-gradient(50rem 30rem at 100% 110%, var(--bg-glow-1), transparent 70%);
   background-size: 200px 200px, auto, auto;
   background-attachment: fixed;
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15px/1.5 var(--font-nunito), system-ui, -apple-system, "Segoe UI", sans-serif;
   transition: background-color 0.5s, color 0.5s;
   /* Full-height column: main grows, so the footer sits at the bottom even on short pages. */
   display: flex;
@@ -112,7 +112,9 @@ img { color: transparent; }
 
 /* ---------- Header ---------- */
 .top { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 28px; text-align: center; }
-.top h1 { margin: 0; font-size: 34px; letter-spacing: -0.02em; }
+.top h1 { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.02em; }
+/* Same overlap as the favicon (about 3px at 46px), scaled to the heading. */
+.wordmark .nine { color: var(--accent); margin-left: -0.065em; transition: color 0.5s; }
 .top .logo { display: inline-block; transform: translateY(-1px); }
 .tagline { margin: 0; color: var(--muted); }
 .me { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; }
