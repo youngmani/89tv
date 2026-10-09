@@ -156,7 +156,9 @@ export function MappingFocus({
 
   const aliased = source.alias !== source.emote.defaultName;
   const chosen = choice.kind === "replace" ? choice.emote : null;
-  const chosenMissing = chosen && !items.some((e) => e.id === chosen.id);
+  // The pick gets its own tile only if no other tile (current, previous, or a result) already shows it.
+  const chosenMissing =
+    chosen && ![current?.id, previous?.emote.id, ...items.map((e) => e.id)].includes(chosen.id);
   // What the seasonal set ends up with, shown next to the original when it's a different emote (like the
   // overview chips). Nothing when it's skipped or removed: the struck-through name says that.
   const o = outcome(source, choice, inTarget);

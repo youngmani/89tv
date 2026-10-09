@@ -19,16 +19,17 @@ function describe(row: SetEmote, c: Choice | undefined, o: Outcome, a: ApplyStat
     what = `${where}swap ${o.current.defaultName} by ${ownerName(o.current)} for ${o.emote.defaultName} by ${ownerName(o.emote)}`;
   else if (o.kind === "keep") what = extra ? `${where}keeping` : `already in the seasonal set as ${o.emote.defaultName}`;
   else if (!c) what = "unreviewed";
-  else if (o.kind === "skip") what = "skipped";
+  else if (o.kind === "skip") what = c.kind === "remove" ? `${where}removed` : "skipped";
   else if (o.emote.id !== row.emote.id) what = `seasonal pick: ${o.emote.defaultName}`;
   else what = "copied as-is";
   const status = a?.state === "error" ? `failed: ${a.message}` : a?.state;
   return [what, status].filter(Boolean).join(", ");
 }
 
-/** The chip's colour: what changes for a name already in the seasonal set, otherwise the user's pick. */
+/** The chip's style: struck through when the name ends up empty, otherwise what changes or the user's pick. */
 function chipKind(c: Choice | undefined, o: Outcome, inTarget: boolean) {
-  if (inTarget) return o.kind === "remove" ? "exclude" : o.kind === "swap" ? "replace" : "mapped";
+  if (o.kind === "remove" || o.kind === "skip") return "exclude";
+  if (inTarget) return o.kind === "swap" ? "replace" : "mapped";
   return c && c.kind !== "keep" ? c.kind : "undecided";
 }
 

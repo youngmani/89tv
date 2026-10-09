@@ -84,8 +84,6 @@ interface Session {
   rows: SetEmote[];
   /** Everything the user steps through, in order (see lib/steps.ts). */
   steps: Step[];
-  /** Target slots in use when loaded (deleted emotes don't count, matching 7TV). */
-  targetUsed: number;
   tags: string[];
 }
 
@@ -143,8 +141,20 @@ export function App({ children }: { children?: React.ReactNode }) {
   const [index, setIndex] = useState(0);
   const [searches, setSearches] = useState<Record<string, SearchState>>({});
   const [applyStates, setApplyStates] = useState<Record<string, ApplyState>>({});
-  /** What the target currently holds under each already-mapped name (kept current after swaps). */
+  /**
+   * What the target holds under each name, kept current through every add, swap and removal. This (not which
+   * section a row was loaded into) is what decides whether a name is in the target.
+   */
   const [targetEntries, setTargetEntries] = useState<Record<string, SetEmote>>({});
+  /** Records what the target now holds under `alias` (null: nothing). */
+  const setTargetEntry = useCallback((alias: string, entry: SetEmote | null) => {
+    setTargetEntries((prev) => {
+      const next = { ...prev };
+      if (entry) next[alias] = entry;
+      else delete next[alias];
+      return next;
+    });
+  }, []);
   /** Swap journal (see MappingRecord.removed). Mirrored in a ref so apply can persist it synchronously. */
   const [removed, setRemovedState] = useState<Record<string, RemovedEntry>>({});
   const removedRef = useRef<Record<string, RemovedEntry>>({});
@@ -420,7 +430,6 @@ export function App({ children }: { children?: React.ReactNode }) {
           extras: extraRows,
           rows: [...pendingRows, ...mappedRows],
           steps,
-          targetUsed: usedSlots(targetEmotes),
           tags: tagsFor(params.theme, params.customTags),
         };
         const restored = saved?.choices ?? {};
@@ -607,7 +616,7 @@ export function App({ children }: { children?: React.ReactNode }) {
   );
 
   const jumpToNextUndecided = () => {
-    const open = (r: SetEmote) => !choices[r.alias] && applyStates[r.alias]?.state !== "added";
+    const open = (r: SetEmote) => !choices[r.alias] && !targetEntries[r.alias];
     const i = pending.findIndex((r, j) => j > index && open(r));
     const k = i >= 0 ? i : pending.findIndex(open);
     setIndex(k >= 0 ? k : pendingDoneStep);
@@ -623,12 +632,8 @@ export function App({ children }: { children?: React.ReactNode }) {
   };
 
   // ---- Applying ----
-  /**
-   * Emotes not yet in the target default to the original; anything already in the target (mapped, or only in
-   * the target) defaults to staying as-is.
-   */
-  const choiceOf = (alias: string): Choice =>
-    choices[alias] ?? (isMapped(alias) || isExtra(alias) ? KEEP : ORIGINAL);
+  /** Names not in the target yet default to the original; names already in it default to staying as-is. */
+  const choiceOf = (alias: string): Choice => choices[alias] ?? (targetEntries[alias] ? KEEP : ORIGINAL);
   /** What saving does with this row (see outcome() in lib/mapping.ts). */
   const outcomeOf = (row: SetEmote) => outcome(row, choiceOf(row.alias), targetEntries[row.alias]);
   /** The emote this row ends up as in the target (null = removed or not copied). */
@@ -645,40 +650,35 @@ export function App({ children }: { children?: React.ReactNode }) {
     return parts.length ? ` (${parts.join(", ")})` : "";
   };
 
-  const plan = pending.filter((r) => outcomeOf(r).kind === "add" && applyStates[r.alias]?.state !== "added");
-  const swaps = [...(session?.mapped ?? []), ...extras].filter(isSwap);
-  /**
-   * Seasonal-set entries the user chose to remove, from either section that's already in the target. The entry
-   * is whatever the seasonal set currently holds under that name (it may have been swapped since loading).
-   */
-  const removalEntries = (sess: Session | null): SetEmote[] =>
-    [...(sess?.mapped ?? []), ...(sess?.extras ?? [])].flatMap((r) =>
-      outcomeOf(r).kind === "remove" ? [targetEntries[r.alias]] : [],
-    );
-  const removals = removalEntries(session).filter((e) => applyStates[e.alias]?.state !== "removed");
-  const addedCount = pending.filter((r) => applyStates[r.alias]?.state === "added").length;
+  // Every row is judged by what the target holds now, whatever section it was loaded into: a new emote that
+  // was added can be swapped or removed like any other, and a name a failed swap left empty gets filled again.
+  const allRows = useMemo(() => [...rows, ...extras], [rows, extras]);
+  const plan = allRows.filter((r) => outcomeOf(r).kind === "add");
+  const swaps = allRows.filter(isSwap);
+  /** The target entries the user chose to remove (whatever the target holds under that name now). */
+  const removalEntries = (rs: SetEmote[]): SetEmote[] =>
+    rs.flatMap((r) => (outcomeOf(r).kind === "remove" ? [targetEntries[r.alias]] : []));
+  const removals = removalEntries(allRows);
   const capacity = session?.target.capacity ?? null;
-  // Swapping out an entry whose emote was deleted from 7TV takes a slot (deleted emotes don't count).
+  // Slots in use now (deleted emotes don't count, matching 7TV), plus what saving would change.
+  const usedNow = Object.values(targetEntries).filter((e) => !e.emote.deleted).length;
+  // Swapping out an entry whose emote was deleted from 7TV takes a slot.
   const swapSlots = swaps.filter((r) => targetEntries[r.alias]?.emote.deleted).length;
-  const removedCount = removalEntries(session).filter(
-    (e) => applyStates[e.alias]?.state === "removed" && !e.emote.deleted,
-  ).length;
   // Removing frees a slot unless the emote was deleted from 7TV (those never counted).
   const freedSlots = removals.filter((e) => !e.emote.deleted).length;
-  const projected = (session?.targetUsed ?? 0) + addedCount + plan.length + swapSlots - removedCount - freedSlots;
+  const projected = usedNow + plan.length + swapSlots - freedSlots;
 
   const stats = useMemo(() => {
     const counts = { replace: 0, original: 0, exclude: 0, undecided: 0, remove: 0, errors: 0 };
     for (const r of pending) {
       const c = choices[r.alias];
-      const done = applyStates[r.alias]?.state === "added";
       if (c && (c.kind === "replace" || c.kind === "original" || c.kind === "exclude")) counts[c.kind]++;
-      else if (!done) counts.undecided++; // already-added emotes don't need reviewing
+      else if (!targetEntries[r.alias]) counts.undecided++; // already-added emotes don't need reviewing
     }
-    for (const r of [...extras, ...(session?.mapped ?? [])]) if (choices[r.alias]?.kind === "remove") counts.remove++;
-    for (const r of [...rows, ...extras]) if (applyStates[r.alias]?.state === "error") counts.errors++;
+    for (const r of allRows) if (choices[r.alias]?.kind === "remove" && targetEntries[r.alias]) counts.remove++;
+    for (const r of allRows) if (applyStates[r.alias]?.state === "error") counts.errors++;
     return counts;
-  }, [pending, rows, extras, session, choices, applyStates]);
+  }, [pending, allRows, choices, targetEntries, applyStates]);
 
   // Closing the tab mid-run is recoverable (see the swap journal and the re-read in apply), but warn anyway.
   useEffect(() => {
@@ -719,13 +719,26 @@ export function App({ children }: { children?: React.ReactNode }) {
       }
       setPreparing(false);
       const freshByAlias = new Map(fresh.map((e) => [e.alias, e]));
-      const toAdd = s.pending.filter((r) => outcomeOf(r).kind === "add" && !freshByAlias.has(r.alias));
-      const alreadyThere = s.pending.filter((r) => freshByAlias.has(r.alias));
-
+      const sessionRows = [...s.rows, ...s.extras];
+      const adds = sessionRows.filter((r) => outcomeOf(r).kind === "add");
+      const toAdd = adds.filter((r) => !freshByAlias.has(r.alias));
       // A swap is only safe if the target still holds exactly what we showed the user.
       const toSwap: SetEmote[] = [];
       const stale: SetEmote[] = [];
-      for (const r of [...s.mapped, ...s.extras].filter(isSwap)) {
+      // Names that turned up in the target since loading (an earlier partial run, or an edit on 7tv.app). From
+      // now on they count as already there. One holding a different emote than the user picked is reported like
+      // any other stale change, and their pick is dropped rather than swapped in over someone else's edit.
+      const alreadyThere: SetEmote[] = [];
+      for (const r of adds.filter((r) => freshByAlias.has(r.alias))) {
+        const now = freshByAlias.get(r.alias)!;
+        setTargetEntry(r.alias, now);
+        if (now.emote.id === finalEmote(r)?.id) alreadyThere.push(r);
+        else {
+          stale.push(r);
+          setChoices((prev) => ({ ...prev, [r.alias]: KEEP }));
+        }
+      }
+      for (const r of sessionRows.filter(isSwap)) {
         const now = freshByAlias.get(r.alias);
         if (now && now.emote.id === targetEntries[r.alias]?.emote.id) toSwap.push(r);
         else stale.push(r);
@@ -733,12 +746,13 @@ export function App({ children }: { children?: React.ReactNode }) {
       // Removals: only if the target still holds exactly the emote the user saw under that name.
       const toRemove: SetEmote[] = [];
       const goneAlready: SetEmote[] = [];
-      for (const e of removalEntries(s)) {
+      for (const e of removalEntries(sessionRows)) {
         const now = freshByAlias.get(e.alias);
         if (!now) goneAlready.push(e);
         else if (now.emote.id === e.emote.id) toRemove.push(e);
         else stale.push(e);
       }
+      for (const e of goneAlready) setTargetEntry(e.alias, null);
       setApplyStates((prev) => {
         const next = { ...prev };
         for (const r of alreadyThere) next[r.alias] = { state: "added" };
@@ -851,6 +865,7 @@ export function App({ children }: { children?: React.ReactNode }) {
         try {
           await api.removeEmoteFromSet(token, s.target.id, entry.emote.id, entry.alias);
           removedN++;
+          setTargetEntry(entry.alias, null);
           setApplyStates((prev) => ({ ...prev, [entry.alias]: { state: "removed" } }));
         } catch (e) {
           if (fail(entry, e)) break;
@@ -863,10 +878,12 @@ export function App({ children }: { children?: React.ReactNode }) {
         const emote = finalEmote(row)!;
         // A name left empty by an interrupted swap keeps the zero-width setting the target had.
         const interrupted = removedRef.current[row.alias];
+        const zeroWidth = interrupted?.zeroWidth ?? row.flags.zeroWidth;
         setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "running" } }));
         try {
-          await api.addEmoteToSet(token, s.target.id, emote.id, aliasFor(row, emote), interrupted?.zeroWidth ?? row.flags.zeroWidth);
+          await api.addEmoteToSet(token, s.target.id, emote.id, aliasFor(row, emote), zeroWidth);
           added++;
+          setTargetEntry(row.alias, { id: emote.id, alias: row.alias, flags: { zeroWidth }, emote });
           if (interrupted) journal(s, row.alias, null);
           setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "added" } }));
         } catch (e) {
@@ -893,7 +910,7 @@ export function App({ children }: { children?: React.ReactNode }) {
           await api.addEmoteToSet(token, s.target.id, emote.id, aliasFor(row, emote), cur.flags.zeroWidth);
           swapped++;
           journal(s, row.alias, null);
-          setTargetEntries((prev) => ({ ...prev, [row.alias]: { ...cur, emote } }));
+          setTargetEntry(row.alias, { ...cur, id: emote.id, emote });
           setChoices((prev) => ({ ...prev, [row.alias]: KEEP }));
           setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "updated" } }));
         } catch (e) {
@@ -903,15 +920,12 @@ export function App({ children }: { children?: React.ReactNode }) {
             restored = true;
             journal(s, row.alias, null);
           } catch {
-            setTargetEntries((prev) => {
-              const next = { ...prev };
-              delete next[row.alias];
-              return next;
-            });
+            // The name is empty now. The journal keeps the old emote, and the user's pick goes in on the next save.
+            setTargetEntry(row.alias, null);
           }
           const suffix = restored
             ? ` The old one (${cur.emote.defaultName}) was put back.`
-            : ` The old one (${cur.emote.defaultName}) couldn't be put back. Re-add it on 7tv.app.`;
+            : ` The old one (${cur.emote.defaultName}) couldn't be put back either. Save again to retry, or pick the previous emote to put it back.`;
           if (fail(row, e, suffix)) break;
         }
         await sleep(250);
@@ -1024,8 +1038,12 @@ export function App({ children }: { children?: React.ReactNode }) {
     { id: "replace", label: `Seasonal picks (${stats.replace})` },
     { id: "original", label: `Copied as-is (${stats.original})` },
     { id: "exclude", label: `Skipped (${stats.exclude})` },
-    ...(session?.mapped.length || extras.length ? [{ id: "changed", label: `Swapping (${swaps.length})` }] : []),
-    ...(extras.length ? [{ id: "remove", label: `Removing (${stats.remove})` }] : []),
+    ...(session?.mapped.length || extras.length || swaps.length
+      ? [{ id: "changed", label: `Swapping (${swaps.length})` }]
+      : []),
+    ...(session?.mapped.length || extras.length || stats.remove
+      ? [{ id: "remove", label: `Removing (${stats.remove})` }]
+      : []),
     { id: "errors", label: `Failed (${stats.errors})` },
   ];
   const free = capacity == null ? null : capacity - projected;
@@ -1074,7 +1092,7 @@ export function App({ children }: { children?: React.ReactNode }) {
       tags={session.tags}
       choice={choiceOf(current.alias)}
       inBase={!isExtra(current.alias)}
-      decided={!!choices[current.alias] && !isMapped(current.alias) && !isExtra(current.alias)}
+      decided={!!choices[current.alias] && !targetEntries[current.alias]}
       search={searches[current.alias]}
       apply={applyStates[current.alias]}
       defaultSort={session.params.sortBy}
@@ -1275,7 +1293,7 @@ export function App({ children }: { children?: React.ReactNode }) {
               )}
               {interrupted.length > 0 && (
                 <div className="alert small" role="alert">
-                  The page closed partway through {interrupted.length === 1 ? "a swap" : `${interrupted.length} swaps`} (
+                  {interrupted.length === 1 ? "A swap" : `${interrupted.length} swaps`} didn&apos;t finish (
                   {interrupted.join(", ")}): the old emote came out but the new one didn&apos;t go in yet. Save again to
                   finish, or pick the <i>previous</i> emote to put it back.
                 </div>
