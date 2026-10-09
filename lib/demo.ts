@@ -131,14 +131,14 @@ export function createDemoServices(seed: DemoSeed = DEMO_SEED): Services {
     // Demo sets come from the store; anything else (a pasted link to a real set) is read from 7TV.
     fetchSetInfo: async (id) => store.info(id) ?? liveApi.fetchSetInfo(id),
     fetchSetEmotes: async (id) => (store.has(id) ? store.entries(id) : liveApi.fetchSetEmotes(id)),
-    searchEmotes: async (p) => {
+    searchEmotes: async (p, token, signal) => {
       const demoTarget = p.targetSetId && store.has(p.targetSetId);
-      const res = await liveApi.searchEmotes(demoTarget ? { ...p, targetSetId: undefined } : p);
+      const res = await liveApi.searchEmotes(demoTarget ? { ...p, targetSetId: undefined } : p, token, signal);
       return { ...res, items: res.items.map((e) => localize(e, p.targetSetId)) };
     },
-    fetchEmoteById: async (id, targetSetId) => {
+    fetchEmoteById: async (id, targetSetId, token, signal) => {
       const demoTarget = targetSetId && store.has(targetSetId);
-      const e = await liveApi.fetchEmoteById(id, demoTarget ? undefined : targetSetId);
+      const e = await liveApi.fetchEmoteById(id, demoTarget ? undefined : targetSetId, token, signal);
       return e && localize(e, targetSetId);
     },
     addEmoteToSet: async (_token, setId, emoteId, alias, zeroWidth) => {

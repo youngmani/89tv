@@ -194,6 +194,8 @@ export function App({ children }: { children?: React.ReactNode }) {
   const runSearchRef = useRef<(row: SetEmote) => Promise<SearchState>>(() => Promise.reject(new Error("not ready")));
   const sessionRef = useRef<Session | null>(null);
   const searchPromises = useRef(new Map<string, Promise<SearchState>>());
+  /** Aborts each emote's latest search; a newer search for the same emote, or a reset, cancels it. */
+  const searchControllers = useRef(new Map<string, AbortController>());
   const { dialog, ask } = useDialog();
 
   // Countdown shown while a rate limit has paused requests.
@@ -247,6 +249,8 @@ export function App({ children }: { children?: React.ReactNode }) {
   const resetSession = useCallback(() => {
     sessionRef.current = null;
     searchPromises.current.clear();
+    searchControllers.current.forEach((c) => c.abort());
+    searchControllers.current.clear();
     setSession(null);
     setSearches({});
     setApplyStates({});
@@ -501,6 +505,11 @@ export function App({ children }: { children?: React.ReactNode }) {
     const linkedId = parseEmoteId(o.input);
     const query = o.input.trim() || row.emote.defaultName;
     const base = { ...o, query, items: [], total: 0, hidden: 0 };
+    // Only the latest search for an emote matters: cancel the one it replaces, request and all.
+    searchControllers.current.get(alias)?.abort();
+    const controller = new AbortController();
+    const { signal } = controller;
+    searchControllers.current.set(alias, controller);
     // Keep the previous results while loading so the tiles don't blink out; the UI dims them under a spinner.
     setSearches((prev) => ({
       ...prev,
@@ -514,19 +523,20 @@ export function App({ children }: { children?: React.ReactNode }) {
       return { items, hidden: others.length - items.length };
     };
     const p = searchLimit(async (): Promise<SearchState> => {
-      if (sessionRef.current !== s) throw new Error("cancelled"); // don't spend quota on a stale session
+      signal.throwIfAborted(); // cancelled while queued: don't spend quota
       if (linkedId) {
         // Exact lookup first; filters don't apply to a specific emote.
-        const emote = await api.fetchEmoteById(linkedId, s.target.id).catch(() => null);
+        const emote = await api.fetchEmoteById(linkedId, s.target.id, undefined, signal).catch((e) => {
+          if (signal.aborted) throw e;
+          return null;
+        });
         if (emote) return { ...base, status: "done", via: "link", total: 1, ...usable([emote]) };
       }
-      const res = await api.searchEmotes({
-        query,
-        tags: o.tagged ? s.tags : [],
-        sortBy: o.sortBy,
-        exactMatch: o.exact,
-        targetSetId: s.target.id,
-      });
+      const res = await api.searchEmotes(
+        { query, tags: o.tagged ? s.tags : [], sortBy: o.sortBy, exactMatch: o.exact, targetSetId: s.target.id },
+        undefined,
+        signal,
+      );
       return {
         ...base,
         status: "done",
@@ -537,7 +547,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     })
       .catch((e): SearchState => ({ ...base, status: "error", error: friendlyError(e) }))
       .then((state) => {
-        if (sessionRef.current === s) setSearches((prev) => ({ ...prev, [alias]: state }));
+        if (!signal.aborted) setSearches((prev) => ({ ...prev, [alias]: state }));
         return state;
       });
     searchPromises.current.set(alias, p);

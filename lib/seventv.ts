@@ -13,7 +13,17 @@ export class ApiError extends Error {
   }
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Waits `ms`, or rejects as soon as `signal` aborts. */
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    signal?.throwIfAborted();
+    const timer = setTimeout(resolve, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 
 // 7TV rate limits per bucket (e.g. "search": 100 per window, "global"). When a bucket is exhausted the API
 // answers HTTP 200 with a RATE_LIMIT_EXCEEDED GraphQL error whose extensions.headers carry
@@ -43,11 +53,11 @@ function pauseFrom(headers: Record<string, string> | undefined, fallbackBucket: 
   return pausedUntil[bucket];
 }
 
-async function waitForBuckets(bucket: Bucket) {
+async function waitForBuckets(bucket: Bucket, signal?: AbortSignal) {
   for (;;) {
     const until = Math.max(pausedUntil[bucket] ?? 0, pausedUntil.global ?? 0);
     if (Date.now() >= until) return;
-    await sleep(until - Date.now());
+    await sleep(until - Date.now(), signal);
   }
 }
 
@@ -56,9 +66,11 @@ export async function gql<T>(
   variables: Record<string, unknown> = {},
   token?: string | null,
   bucket: Bucket = "global",
+  /** Aborts the request, including any wait for a rate limit or a retry. */
+  signal?: AbortSignal,
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
-    await waitForBuckets(bucket);
+    await waitForBuckets(bucket, signal);
 
     const res = await fetch(GQL_ENDPOINT, {
       method: "POST",
@@ -67,11 +79,12 @@ export async function gql<T>(
         ...(token ? { authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify({ query, variables }),
+      signal,
     });
 
     if ((res.status === 429 || res.status >= 500) && attempt < 4) {
       const retryAfter = Number(res.headers.get("retry-after"));
-      await sleep(retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt);
+      await sleep(retryAfter > 0 ? retryAfter * 1000 : 1000 * 2 ** attempt, signal);
       continue;
     }
 
@@ -84,7 +97,7 @@ export async function gql<T>(
       if (e.extensions?.code === "RATE_LIMIT_EXCEEDED" && attempt < 8) {
         // Wait for whichever bucket was actually exhausted, even if it isn't the one we expected.
         const until = pauseFrom(e.extensions.headers, bucket);
-        await sleep(Math.max(0, until - Date.now()));
+        await sleep(Math.max(0, until - Date.now()), signal);
         continue;
       }
       throw new ApiError(e.extensions?.message ?? e.message, e.extensions?.code, e.extensions?.status);
@@ -227,7 +240,11 @@ export interface SearchResult extends EmoteSummary {
 // window (e.g. "catJAM" + halloween: 1 result trending vs 6 all-time). That's intended.
 // Same field the 7tv.app website's own EmoteSearch operation uses (emotes.search), including its
 // inEmoteSets trick for showing which results are already in a set.
-export async function searchEmotes(p: SearchParams, token?: string | null): Promise<{ total: number; items: SearchResult[] }> {
+export async function searchEmotes(
+  p: SearchParams,
+  token?: string | null,
+  signal?: AbortSignal,
+): Promise<{ total: number; items: SearchResult[] }> {
   type Item = EmoteSummary & { inEmoteSets: { emote: { alias: string } | null }[] };
   const d = await gql<{ emotes: { search: { totalCount: number; items: Item[] } } }>(
     `query EmoteSearch($query: String, $tags: Tags, $sort: Sort!, $filters: Filters, $perPage: Int, $setIds: [Id!]!, $withSets: Boolean!) {
@@ -247,6 +264,7 @@ export async function searchEmotes(p: SearchParams, token?: string | null): Prom
     },
     token,
     "search",
+    signal,
   );
   return {
     total: d.emotes.search.totalCount,
@@ -258,7 +276,12 @@ export async function searchEmotes(p: SearchParams, token?: string | null): Prom
 }
 
 /** Looks up one emote by ID (null if it doesn't exist). Not a search, so it doesn't use the search quota. */
-export async function fetchEmoteById(id: string, targetSetId?: string, token?: string | null): Promise<SearchResult | null> {
+export async function fetchEmoteById(
+  id: string,
+  targetSetId?: string,
+  token?: string | null,
+  signal?: AbortSignal,
+): Promise<SearchResult | null> {
   type Item = EmoteSummary & { inEmoteSets: { emote: { alias: string } | null }[] };
   const d = await gql<{ emotes: { emote: Item | null } }>(
     `query EmoteById($id: Id!, $setIds: [Id!]!, $withSets: Boolean!) {
@@ -267,6 +290,8 @@ export async function fetchEmoteById(id: string, targetSetId?: string, token?: s
     // 7TV rejects an empty list, so the field is skipped when there's no set to check.
     { id, setIds: targetSetId ? [targetSetId] : ["00000000000000000000000000"], withSets: !!targetSetId },
     token,
+    "global",
+    signal,
   );
   const e = d.emotes.emote;
   if (!e) return null;
