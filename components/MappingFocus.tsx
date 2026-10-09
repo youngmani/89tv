@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Button,
   Checkbox,
@@ -16,6 +16,8 @@ import { shouldIgnoreKey } from "@/lib/hotkeys";
 import {
   type ApplyState,
   type Choice,
+  KEEP,
+  ORIGINAL,
   type RemovedEntry,
   SORT_OPTIONS,
   type SearchOptions,
@@ -162,11 +164,12 @@ export function MappingFocus({
   const mapped = !!inTarget;
   const current = inTarget?.emote;
   // "0" means "leave it as the source has it": the original for new emotes, the current entry for mapped ones.
-  const baseline: Choice = mapped ? { kind: "keep" } : { kind: "original" };
+  const baseline = mapped ? KEEP : ORIGINAL;
   // While a new search runs, the previous results stay up (dimmed, not selectable) under a spinner.
   const loading = !search || search.status === "loading";
-  const items = (search?.items ?? []).filter(
-    (e) => e.id !== current?.id && e.id !== previous?.emote.id,
+  const items = useMemo(
+    () => (search?.items ?? []).filter((e) => e.id !== current?.id && e.id !== previous?.emote.id),
+    [search, current, previous],
   );
 
   useEffect(() => {

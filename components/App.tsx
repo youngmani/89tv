@@ -96,6 +96,13 @@ interface Session {
   tags: string[];
 }
 
+const byAlias = (a: SetEmote, b: SetEmote) =>
+  a.alias.localeCompare(b.alias, undefined, { sensitivity: "base" });
+
+// Re-apply the source alias, but only when it differs from the new emote's own name.
+const aliasFor = (row: SetEmote, emote: EmoteSummary) =>
+  row.alias !== emote.defaultName ? row.alias : undefined;
+
 const tagsFor = (theme: Theme, customTags: string) =>
   theme === "custom"
     ? customTags
@@ -441,14 +448,12 @@ export function App({ children }: { children?: React.ReactNode }) {
         if (!me.editableEmoteSetIds.includes(target.id))
           throw new Error("You can't edit that seasonal set.");
         // An emote counts as already mapped when the target has something under the same name (alias).
-        const byAlias = (a: SetEmote, b: SetEmote) =>
-          a.alias.localeCompare(b.alias, undefined, { sensitivity: "base" });
         const entries = new Map(targetEmotes.map((e) => [e.alias, e]));
-        const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).sort(byAlias);
-        const mappedRows = sourceEmotes.filter((e) => entries.has(e.alias)).sort(byAlias);
+        const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).toSorted(byAlias);
+        const mappedRows = sourceEmotes.filter((e) => entries.has(e.alias)).toSorted(byAlias);
         // Target emotes the source doesn't have (e.g. the source changed since last season).
         const sourceAliases = new Set(sourceEmotes.map((e) => e.alias));
-        const extraRows = targetEmotes.filter((e) => !sourceAliases.has(e.alias)).sort(byAlias);
+        const extraRows = targetEmotes.filter((e) => !sourceAliases.has(e.alias)).toSorted(byAlias);
         const steps = buildSteps(pendingRows, mappedRows, extraRows);
         const s: Session = {
           params: mappingParams(params),
@@ -483,7 +488,7 @@ export function App({ children }: { children?: React.ReactNode }) {
         // Swap journal: an entry whose name is back in the target finished (or rolled back) before the page
         // closed. One whose name is still missing was interrupted between remove and re-add; keep it so the
         // user can restore the previous emote.
-        const removed = Object.fromEntries(
+        const journal = Object.fromEntries(
           Object.entries(saved?.removed ?? {}).filter(([alias]) => !entries.has(alias)),
         );
         resetSession();
@@ -494,7 +499,7 @@ export function App({ children }: { children?: React.ReactNode }) {
           ),
         );
         setChoices(restored);
-        setRemoved(removed);
+        setRemoved(journal);
         // Give the first card up to FIRST_CARD_BUDGET_MS to be ready (its search plus every image on it) while
         // the button shows a spinner, so it doesn't appear half-loaded and shift around. If that takes longer,
         // switch anyway: the card shows its usual loading state, like any other slow card.
@@ -520,7 +525,7 @@ export function App({ children }: { children?: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [token, me, resetSession, runSearch, api, sets],
+    [token, me, resetSession, setRemoved, runSearch, api, sets],
   );
 
   // Resume the saved mapping as soon as we know who the user is.
@@ -793,7 +798,7 @@ export function App({ children }: { children?: React.ReactNode }) {
       // now on they count as already there. One holding a different emote than the user picked is reported like
       // any other stale change, and their pick is dropped rather than swapped in over someone else's edit.
       const alreadyThere: SetEmote[] = [];
-      for (const r of adds.filter((r) => freshByAlias.has(r.alias))) {
+      for (const r of adds.filter((a) => freshByAlias.has(a.alias))) {
         const now = freshByAlias.get(r.alias)!;
         setTargetEntry(r.alias, now);
         if (now.emote.id === finalEmote(r)?.id) alreadyThere.push(r);
@@ -912,9 +917,6 @@ export function App({ children }: { children?: React.ReactNode }) {
       let failed = 0;
       let full = false;
       let fatal: string | null = null;
-      // Re-apply the source alias, but only when it differs from the new emote's own name.
-      const aliasFor = (row: SetEmote, emote: EmoteSummary) =>
-        row.alias !== emote.defaultName ? row.alias : undefined;
       const fail = (row: SetEmote, e: unknown, suffix = "") => {
         failed++;
         const message = friendlyError(e) + suffix;
@@ -1101,10 +1103,10 @@ export function App({ children }: { children?: React.ReactNode }) {
   };
   const targetName = session?.target.name ?? "your seasonal set";
   const sectionRows = (kind: Step["kind"]) =>
-    steps.flatMap((st, index) => {
+    steps.flatMap((st, i) => {
       if (st.kind !== kind) return [];
       const row = stepRow(st)!;
-      return matchesFilter(row) ? [{ row, index }] : [];
+      return matchesFilter(row) ? [{ row, index: i }] : [];
     });
   const sectionTitle: Record<Section, string> = {
     pending: "New",

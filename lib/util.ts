@@ -17,6 +17,7 @@ export const sleep = (ms: number, signal?: AbortSignal) =>
 export const preloadImage = (src: string) =>
   new Promise<void>((resolve) => {
     const img = new Image();
-    img.onload = img.onerror = () => resolve();
+    img.addEventListener("load", () => resolve());
+    img.addEventListener("error", () => resolve());
     img.src = src;
   });
