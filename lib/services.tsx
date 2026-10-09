@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import { type MappingRecord, clearLegacyStorage, clearMapping, loadMapping, saveMapping } from "./mapping";
+import { type MappingRecord, clearMapping, loadMapping, saveMapping } from "./mapping";
 import * as seventv from "./seventv";
 import { load, save } from "./storage";
 
@@ -35,8 +35,6 @@ export interface Services {
   storage: {
     token: Slot<string>;
     mapping: Slot<MappingRecord>;
-    /** One-time housekeeping on startup (e.g. dropping keys from older versions). */
-    init(): void;
   };
   /** Sets to pre-select on the setup form when there's no in-progress mapping. */
   initialSelection?: { sourceId: string; targetId: string };
@@ -62,7 +60,6 @@ export function createLiveServices(): Services {
     storage: {
       token: { get: () => load<string | null>(TOKEN_KEY, null), set: (v) => save(TOKEN_KEY, v) },
       mapping: { get: loadMapping, set: (v) => (v ? saveMapping(v) : clearMapping()) },
-      init: clearLegacyStorage,
     },
   };
 }

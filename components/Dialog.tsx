@@ -40,22 +40,51 @@ export function useDialog() {
   );
 
   const dialog = (
+    <ModalShell
+      isOpen={!!opts}
+      dismissable={opts?.dismissable ?? true}
+      alert={!!opts?.confirmLabel}
+      onDismiss={() => close(false)}
+    >
+      {opts && <DialogContent {...opts} onClose={close} />}
+    </ModalShell>
+  );
+
+  return { dialog, ask };
+}
+
+/**
+ * The modal around every dialog in the app. `dismissable`: whether clicking outside or pressing Escape closes it
+ * (calling `onDismiss`). `alert`: it asks for a decision (role "alertdialog").
+ */
+export function ModalShell({
+  isOpen,
+  dismissable,
+  alert,
+  onDismiss,
+  children,
+}: {
+  isOpen: boolean;
+  dismissable: boolean;
+  alert: boolean;
+  onDismiss: () => void;
+  children: React.ReactNode;
+}) {
+  return (
     <ModalOverlay
       className="modal-overlay"
-      isOpen={!!opts}
-      onOpenChange={(open) => !open && close(false)}
-      isDismissable={opts?.dismissable ?? true}
-      isKeyboardDismissDisabled={opts?.dismissable === false}
+      isOpen={isOpen}
+      onOpenChange={(open) => !open && onDismiss()}
+      isDismissable={dismissable}
+      isKeyboardDismissDisabled={!dismissable}
     >
       <Modal className="modal">
-        <Dialog className="dialog" role={opts?.confirmLabel ? "alertdialog" : "dialog"}>
-          {opts && <DialogContent {...opts} onClose={close} />}
+        <Dialog className="dialog" role={alert ? "alertdialog" : "dialog"}>
+          {children}
         </Dialog>
       </Modal>
     </ModalOverlay>
   );
-
-  return { dialog, ask };
 }
 
 /** A dialog's title, body and buttons; goes inside react-aria's <Dialog>. */

@@ -11,6 +11,7 @@ import {
   SORT_OPTIONS,
   type SearchOptions,
   type SearchState,
+  outcome,
 } from "@/lib/mapping";
 import { type EmoteSummary, type SetEmote, type SortBy, emoteImage, emotePage, ownerName } from "@/lib/seventv";
 
@@ -158,13 +159,13 @@ export function MappingFocus({
   const chosenMissing = chosen && !items.some((e) => e.id === chosen.id);
   // What the seasonal set ends up with, shown next to the original when it's a different emote (like the
   // overview chips). Nothing when it's skipped or removed: the struck-through name says that.
-  const result =
-    choice.kind === "replace" ? choice.emote : choice.kind === "keep" ? current : choice.kind === "original" ? source.emote : undefined;
+  const o = outcome(source, choice, inTarget);
+  const result = o.kind === "remove" || o.kind === "skip" ? undefined : o.emote;
   const changed = result && result.id !== source.emote.id ? result : undefined;
   // A swap's third emote: what the seasonal set holds now and is about to lose. Named in the subtitle, small,
   // so the header stays "base → new".
-  const replacing = current && result && result.id !== current.id ? current : undefined;
-  const keepsCurrent = mapped && (choice.kind === "keep" || (choice.kind === "original" && current?.id === source.emote.id));
+  const replacing = o.kind === "swap" ? o.current : undefined;
+  const keepsCurrent = o.kind === "keep";
 
   return (
     <section className="card focus" aria-label={`Picking for ${source.alias}`}>

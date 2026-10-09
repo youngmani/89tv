@@ -1,6 +1,7 @@
 import { DEMO_SEED } from "./demo-data";
 import { type Api, type Services, liveApi, noopSlot } from "./services";
 import { ApiError, type EmoteSetInfo, type EmoteSummary, type Me, type SearchResult, type SetEmote, usedSlots } from "./seventv";
+import { sleep } from "./util";
 
 /** The shape of lib/demo-data.ts. The first seasonal set is pre-selected on the setup form. */
 export interface DemoSeed {
@@ -18,7 +19,6 @@ export const DEMO_BASE_ID = "DEMOBASE000000000000000000";
 /** Fake set IDs for the seasonal sets, in seed order. */
 const demoSeasonalId = (i: number) => `DEMOSEASONAL${String(i).padStart(14, "0")}`;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** A little latency so saving looks like saving. */
 const latency = () => sleep(80 + Math.random() * 120);
 
@@ -156,7 +156,7 @@ export function createDemoServices(seed: DemoSeed = DEMO_SEED): Services {
   return {
     mode: "demo",
     api,
-    storage: { token: noopSlot("demo"), mapping: noopSlot(), init: () => {} },
+    storage: { token: noopSlot("demo"), mapping: noopSlot() },
     initialSelection: { sourceId: DEMO_BASE_ID, targetId: demoSeasonalId(0) },
   };
 }

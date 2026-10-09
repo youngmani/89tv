@@ -1,6 +1,8 @@
 // Minimal client for the 7TV v4 GraphQL API (https://api.7tv.app/v4/gql).
 // The endpoint reflects any Origin in its CORS headers, so the browser can call it directly.
 
+import { sleep } from "./util";
+
 export const GQL_ENDPOINT = "https://api.7tv.app/v4/gql";
 
 export class ApiError extends Error {
@@ -13,17 +15,6 @@ export class ApiError extends Error {
   }
 }
 
-/** Waits `ms`, or rejects as soon as `signal` aborts. */
-const sleep = (ms: number, signal?: AbortSignal) =>
-  new Promise<void>((resolve, reject) => {
-    signal?.throwIfAborted();
-    const timer = setTimeout(resolve, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(signal?.reason);
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
 
 // 7TV rate limits per bucket (e.g. "search": 100 per window, "global"). When a bucket is exhausted the API
 // answers HTTP 200 with a RATE_LIMIT_EXCEEDED GraphQL error whose extensions.headers carry
@@ -236,6 +227,18 @@ export interface SearchResult extends EmoteSummary {
   inTarget: string[];
 }
 
+/** An emote as queried with `inEmoteSets` (included only when there's a target set to check). */
+type EmoteWithSets = EmoteSummary & { inEmoteSets?: { emote: { alias: string } | null }[] };
+const withInTarget = ({ inEmoteSets, ...e }: EmoteWithSets): SearchResult => ({
+  ...e,
+  inTarget: (inEmoteSets ?? []).flatMap((s) => (s.emote ? [s.emote.alias] : [])),
+});
+/**
+ * `$setIds` is a required variable even when `inEmoteSets` is skipped (`@include(if: false)`), and 7TV rejects
+ * an empty list, so this placeholder is sent when there's no target set.
+ */
+const setIdsFor = (targetSetId: string | undefined) => (targetSetId ? [targetSetId] : ["00000000000000000000000000"]);
+
 // Note: windowed sorts (TRENDING_*, TOP_MONTHLY) also filter, returning only emotes with activity in that
 // window (e.g. "catJAM" + halloween: 1 result trending vs 6 all-time). That's intended.
 // Same field the 7tv.app website's own EmoteSearch operation uses (emotes.search), including its
@@ -245,8 +248,7 @@ export async function searchEmotes(
   token?: string | null,
   signal?: AbortSignal,
 ): Promise<{ total: number; items: SearchResult[] }> {
-  type Item = EmoteSummary & { inEmoteSets: { emote: { alias: string } | null }[] };
-  const d = await gql<{ emotes: { search: { totalCount: number; items: Item[] } } }>(
+  const d = await gql<{ emotes: { search: { totalCount: number; items: EmoteWithSets[] } } }>(
     `query EmoteSearch($query: String, $tags: Tags, $sort: Sort!, $filters: Filters, $perPage: Int, $setIds: [Id!]!, $withSets: Boolean!) {
       emotes { search(query: $query, tags: $tags, sort: $sort, filters: $filters, page: 1, perPage: $perPage) {
         totalCount items { ${EMOTE_FIELDS} inEmoteSets(emoteSetIds: $setIds) @include(if: $withSets) { emote { alias } } }
@@ -258,8 +260,7 @@ export async function searchEmotes(
       sort: { sortBy: p.sortBy, order: "DESCENDING" },
       filters: { exactMatch: p.exactMatch },
       perPage: p.perPage ?? 24,
-      // 7TV rejects an empty list here, so the field is left out entirely when there's no set to check.
-      setIds: p.targetSetId ? [p.targetSetId] : ["00000000000000000000000000"],
+      setIds: setIdsFor(p.targetSetId),
       withSets: !!p.targetSetId,
     },
     token,
@@ -268,10 +269,7 @@ export async function searchEmotes(
   );
   return {
     total: d.emotes.search.totalCount,
-    items: d.emotes.search.items.map(({ inEmoteSets, ...e }) => ({
-      ...e,
-      inTarget: (inEmoteSets ?? []).flatMap((s) => (s.emote ? [s.emote.alias] : [])),
-    })),
+    items: d.emotes.search.items.map(withInTarget),
   };
 }
 
@@ -282,21 +280,16 @@ export async function fetchEmoteById(
   token?: string | null,
   signal?: AbortSignal,
 ): Promise<SearchResult | null> {
-  type Item = EmoteSummary & { inEmoteSets: { emote: { alias: string } | null }[] };
-  const d = await gql<{ emotes: { emote: Item | null } }>(
+  const d = await gql<{ emotes: { emote: EmoteWithSets | null } }>(
     `query EmoteById($id: Id!, $setIds: [Id!]!, $withSets: Boolean!) {
       emotes { emote(id: $id) { ${EMOTE_FIELDS} inEmoteSets(emoteSetIds: $setIds) @include(if: $withSets) { emote { alias } } } }
     }`,
-    // 7TV rejects an empty list, so the field is skipped when there's no set to check.
-    { id, setIds: targetSetId ? [targetSetId] : ["00000000000000000000000000"], withSets: !!targetSetId },
+    { id, setIds: setIdsFor(targetSetId), withSets: !!targetSetId },
     token,
     "global",
     signal,
   );
-  const e = d.emotes.emote;
-  if (!e) return null;
-  const { inEmoteSets, ...rest } = e;
-  return { ...rest, inTarget: (inEmoteSets ?? []).flatMap((s) => (s.emote ? [s.emote.alias] : [])) };
+  return d.emotes.emote && withInTarget(d.emotes.emote);
 }
 
 export async function addEmoteToSet(

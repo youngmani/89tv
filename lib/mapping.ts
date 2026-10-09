@@ -1,11 +1,11 @@
-import type { EmoteSummary, SearchResult, SortBy } from "./seventv";
+import type { EmoteSummary, SearchResult, SetEmote, SortBy } from "./seventv";
 import { load, save } from "./storage";
 import type { Section } from "./steps";
 
 /**
- * What to do with one emote name. "keep" applies to names already in the target (leave them as they are);
- * "exclude" to source emotes not yet there (don't copy); "remove" to target emotes that aren't in the
- * source (delete them from the target).
+ * What to do with one emote name. "original" and "replace" pick the emote the name should end up with. The rest
+ * depend on whether the target already has the name: "exclude" leaves a name that isn't there yet out (don't
+ * copy it), while "keep" and "remove" apply to names already in the target (leave as is, or delete it).
  */
 export type Choice =
   | { kind: "original" }
@@ -57,6 +57,33 @@ export type ApplyState = {
 export const ORIGINAL: Choice = { kind: "original" };
 export const KEEP: Choice = { kind: "keep" };
 
+/**
+ * What a choice does to the seasonal set, given what it holds under that name now (`current`):
+ *   - "add": the name is free and `emote` goes in
+ *   - "swap": `current` comes out and `emote` goes in under the same name
+ *   - "keep": the set already holds `emote` there, so nothing changes
+ *   - "remove": `current` comes out
+ *   - "skip": the name is free and stays that way
+ */
+export type Outcome =
+  | { kind: "add"; emote: EmoteSummary }
+  | { kind: "swap"; emote: EmoteSummary; current: EmoteSummary }
+  | { kind: "keep"; emote: EmoteSummary }
+  | { kind: "remove"; current: EmoteSummary }
+  | { kind: "skip" };
+
+/** The single place that decides what a row ends up as. `row` is the base emote (or, for a target-only name, its entry). */
+export function outcome(row: SetEmote, choice: Choice, current: SetEmote | undefined): Outcome {
+  const cur = current?.emote;
+  const want =
+    choice.kind === "replace" ? choice.emote : choice.kind === "original" ? row.emote : choice.kind === "keep" ? cur : undefined;
+  if (!cur) return want ? { kind: "add", emote: want } : { kind: "skip" };
+  if (choice.kind === "remove") return { kind: "remove", current: cur };
+  // "exclude" only means something for a name that isn't there yet; on one that is, it leaves it alone.
+  if (!want || want.id === cur.id) return { kind: "keep", emote: cur };
+  return { kind: "swap", emote: want, current: cur };
+}
+
 // ---------- Themes ----------
 
 // `palette` selects the site-wide colour scheme (see [data-theme] in globals.css).
@@ -79,23 +106,34 @@ export const DEFAULT_SORT: SortBy = "TOP_ALL_TIME";
 
 // ---------- The in-progress mapping ----------
 
-/**
- * A mapping is "in progress" from the moment the user starts it until they cancel it or every emote
- * has been added. Only that one mapping is persisted; nothing else (no general preferences).
- */
-export interface MappingRecord {
+/** What the user picked on the setup form. */
+export interface MappingParams {
   sourceId: string;
   targetId: string;
   theme: Theme;
   customTags: string;
   sortBy: SortBy;
+}
+
+/** Just the setup-form fields of a saved mapping (or anything else that has them). */
+export const mappingParams = ({ sourceId, targetId, theme, customTags, sortBy }: MappingParams): MappingParams => ({
+  sourceId,
+  targetId,
+  theme,
+  customTags,
+  sortBy,
+});
+
+/**
+ * A mapping is "in progress" from the moment the user starts it until they cancel it or every emote
+ * has been added. Only that one mapping is persisted; nothing else (no general preferences).
+ */
+export interface MappingRecord extends MappingParams {
   choices: Record<string, Choice>;
   /** Alias of the emote on screen; aliases are stable even when the pending list shrinks. */
   currentAlias: string | null;
   /** The section whose "done" step the user was on, if any. */
   atDone?: Section;
-  /** From older versions: "summary" was the done step after the emotes to add, "end" the last one. */
-  atStep?: "summary" | "end";
   /**
    * Swap journal: entries removed from the target whose replacement hasn't been confirmed yet. Written
    * before each remove, cleared once the new emote (or the rollback) is in. If the page closes mid-swap,
@@ -114,14 +152,3 @@ const MAPPING_KEY = "89tv:mapping";
 export const loadMapping = () => load<MappingRecord | null>(MAPPING_KEY, null);
 export const saveMapping = (m: MappingRecord) => save(MAPPING_KEY, m);
 export const clearMapping = () => save(MAPPING_KEY, null);
-
-/** Drops storage keys written by earlier versions of the app. */
-export function clearLegacyStorage() {
-  try {
-    for (const k of Object.keys(window.localStorage)) {
-      if (/^89tv:(prefs|progress:|choices:)/.test(k)) window.localStorage.removeItem(k);
-    }
-  } catch {
-    /* ignore */
-  }
-}

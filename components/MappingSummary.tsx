@@ -4,8 +4,7 @@ import { useEffect } from "react";
 import { Button } from "react-aria-components";
 import { shouldIgnoreKey } from "@/lib/hotkeys";
 import type { Section } from "@/lib/steps";
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+import { plural } from "@/lib/util";
 
 /** ← and → step back and forward, when there's somewhere to go. */
 function useArrowKeys(canPrev: boolean, canNext: boolean, onNavigate: (delta: number) => void) {

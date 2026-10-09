@@ -3,12 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
-  Dialog,
   Heading,
   Input,
   Label,
-  Modal,
-  ModalOverlay,
   ProgressBar,
   Tab,
   TabList,
@@ -16,7 +13,7 @@ import {
   Tabs,
   TextField,
 } from "react-aria-components";
-import { type DialogOptions, DialogContent, useDialog } from "@/components/Dialog";
+import { type DialogOptions, DialogContent, ModalShell, useDialog } from "@/components/Dialog";
 import { MappingFocus } from "@/components/MappingFocus";
 import { MappingOverview } from "@/components/MappingOverview";
 import { MappingSummary } from "@/components/MappingSummary";
@@ -28,6 +25,7 @@ import {
   type Choice,
   DEFAULT_SORT,
   KEEP,
+  type MappingParams,
   type MappingRecord,
   type RemovedEntry,
   ORIGINAL,
@@ -37,6 +35,8 @@ import {
   THEMES,
   type Theme,
   themeForDate,
+  mappingParams,
+  outcome,
 } from "@/lib/mapping";
 import { createLimiter } from "@/lib/queue";
 import {
@@ -57,8 +57,9 @@ import {
 } from "@/lib/seventv";
 import { type Section, type Step, buildSteps, stepAlias, stepRow, stepSection } from "@/lib/steps";
 import { useServices } from "@/lib/services";
-type Filter = "all" | "undecided" | "replace" | "original" | "exclude" | "changed" | "remove" | "errors";
+import { plural, preloadImage, sleep } from "@/lib/util";
 
+type Filter = "all" | "undecided" | "replace" | "original" | "exclude" | "changed" | "remove" | "errors";
 
 // Searches are the scarce resource (7TV allows ~100 per window), so we only search the emote on screen
 // and preload the next one.
@@ -66,25 +67,8 @@ const searchLimit = createLimiter(2);
 const AUTO_SEARCH_BURST = 3;
 const AUTO_SEARCH_WINDOW_MS = 3000;
 const AUTO_SEARCH_DELAY_MS = 1000;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** How long "Start picking" waits for the first card before showing it anyway. */
 const FIRST_CARD_BUDGET_MS = 1000;
-/** Resolves once the image has loaded (or failed), so it's in the cache before it's shown. */
-const preloadImage = (src: string) =>
-  new Promise<void>((resolve) => {
-    const img = new Image();
-    img.onload = img.onerror = () => resolve();
-    img.src = src;
-  });
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-interface MappingParams {
-  sourceId: string;
-  targetId: string;
-  theme: Theme;
-  customTags: string;
-  sortBy: SortBy;
-}
 
 interface Session {
   params: MappingParams;
@@ -113,13 +97,13 @@ const tagsFor = (theme: Theme, customTags: string) =>
         .filter(Boolean)
     : [...THEMES[theme].tags];
 
+/** A step of the save modal: a message or confirmation (see DialogOptions), or the progress bar. */
+type SaveDialog = (DialogOptions & { kind?: undefined }) | { kind: "saving"; confirmLabel?: undefined; dismissable?: undefined };
+
 /**
  * The whole app. API and storage come from <ServicesProvider> (live on /, faked on /demo).
  * `children` render at the end of <main>, right under the last card (e.g. /demo's exit link).
  */
-/** A step of the save modal: a message or confirmation (see DialogOptions), or the progress bar. */
-type SaveDialog = (DialogOptions & { kind?: undefined }) | { kind: "saving"; confirmLabel?: undefined; dismissable?: undefined };
-
 export function App({ children }: { children?: React.ReactNode }) {
   // Stable for the page's lifetime (created once), so depending on these never re-runs effects/callbacks.
   const { api, storage, mode, initialSelection } = useServices();
@@ -190,8 +174,6 @@ export function App({ children }: { children?: React.ReactNode }) {
     saveAnswer.current?.(ok);
     saveAnswer.current = null;
   };
-  /** Lets startMapping (defined above runSearch) start the first card's search. */
-  const runSearchRef = useRef<(row: SetEmote) => Promise<SearchState>>(() => Promise.reject(new Error("not ready")));
   const sessionRef = useRef<Session | null>(null);
   const searchPromises = useRef(new Map<string, Promise<SearchState>>());
   /** Aborts each emote's latest search; a newer search for the same emote, or a reset, cancels it. */
@@ -219,7 +201,6 @@ export function App({ children }: { children?: React.ReactNode }) {
 
   // ---- Bootstrap: saved token and any in-progress mapping ----
   useEffect(() => {
-    storage.init();
     setToken(storage.token.get());
     const saved = storage.mapping.get();
     if (saved) {
@@ -329,166 +310,6 @@ export function App({ children }: { children?: React.ReactNode }) {
 
   const tags = useMemo(() => tagsFor(theme, customTags), [theme, customTags]);
 
-  // ---- Start / resume a mapping ----
-  const startMapping = useCallback(
-    async (params: MappingParams, saved?: MappingRecord) => {
-      if (!token || !me) return;
-      setLoading(true);
-      setLoadError(null);
-      setSourceLinkError(null);
-      // A pasted link (not one of the user's own sets) is only checked with 7TV now, on submit.
-      const pastedSource = !sets.some((x) => x.id === params.sourceId) && !saved;
-      if (pastedSource) {
-        const found = await api.fetchSetInfo(params.sourceId, token).catch(() => null);
-        if (!found) {
-          setSourceLinkError("No emote set found at that link. Check it and try again.");
-          setLoading(false);
-          return;
-        }
-      }
-      try {
-        const [source, target, sourceEmotes, targetEmotes] = await Promise.all([
-          api.fetchSetInfo(params.sourceId, token),
-          api.fetchSetInfo(params.targetId, token),
-          api.fetchSetEmotes(params.sourceId, token),
-          api.fetchSetEmotes(params.targetId, token),
-        ]);
-        if (!source) throw new Error("Your base set no longer exists.");
-        if (!target) throw new Error("Your seasonal set no longer exists.");
-        if (!me.editableEmoteSetIds.includes(target.id)) throw new Error("You can't edit that seasonal set.");
-        // An emote counts as already mapped when the target has something under the same name (alias).
-        const byAlias = (a: SetEmote, b: SetEmote) => a.alias.localeCompare(b.alias, undefined, { sensitivity: "base" });
-        const entries = new Map(targetEmotes.map((e) => [e.alias, e]));
-        const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).sort(byAlias);
-        const mappedRows = sourceEmotes.filter((e) => entries.has(e.alias)).sort(byAlias);
-        // Target emotes the source doesn't have (e.g. the source changed since last season).
-        const sourceAliases = new Set(sourceEmotes.map((e) => e.alias));
-        const extraRows = targetEmotes.filter((e) => !sourceAliases.has(e.alias)).sort(byAlias);
-        const steps = buildSteps(pendingRows, mappedRows, extraRows);
-        const s: Session = {
-          params,
-          source,
-          target,
-          pending: pendingRows,
-          mapped: mappedRows,
-          extras: extraRows,
-          rows: [...pendingRows, ...mappedRows],
-          steps,
-          targetUsed: usedSlots(targetEmotes),
-          tags: tagsFor(params.theme, params.customTags),
-        };
-        const restored = saved?.choices ?? {};
-        // Resume where the user was. Names are looked up rather than positions, because emotes move between
-        // sections as they get added (e.g. a pending emote added before the reload is now "mapped").
-        const doneAt = (section: Section) => steps.findIndex((st) => st.kind === "done" && st.section === section);
-        const savedDone = saved?.atDone ?? (saved?.atStep === "summary" ? "pending" : undefined);
-        const aliasAt = saved?.currentAlias ? steps.findIndex((st) => stepAlias(st) === saved.currentAlias) : -1;
-        const firstUndecided = s.pending.findIndex((r) => !restored[r.alias]);
-        const step =
-          saved?.atStep === "end"
-            ? steps.length - 1 // the last step is always a done step
-            : savedDone && doneAt(savedDone) >= 0
-              ? doneAt(savedDone)
-              : aliasAt >= 0
-                ? aliasAt
-                : firstUndecided >= 0
-                  ? firstUndecided
-                  : // Every emote to add is decided: their done step. With none to add, the next section's start.
-                    Math.max(0, doneAt("pending"));
-        // Swap journal: an entry whose name is back in the target finished (or rolled back) before the page
-        // closed. One whose name is still missing was interrupted between remove and re-add; keep it so the
-        // user can restore the previous emote.
-        const removed = Object.fromEntries(
-          Object.entries(saved?.removed ?? {}).filter(([alias]) => !entries.has(alias)),
-        );
-        resetSession();
-        sessionRef.current = s;
-        setTargetEntries(
-          Object.fromEntries([...mappedRows, ...extraRows].map((r) => [r.alias, entries.get(r.alias)!])),
-        );
-        setChoices(restored);
-        setRemoved(removed);
-        // Give the first card up to FIRST_CARD_BUDGET_MS to be ready (its search plus every image on it) while
-        // the button shows a spinner, so it doesn't appear half-loaded and shift around. If that takes longer,
-        // switch anyway: the card shows its usual loading state, like any other slow card.
-        const first = stepRow(steps[step]);
-        if (first) {
-          const current = entries.get(first.alias)?.emote;
-          const ready = runSearchRef.current(first).then((st) =>
-            Promise.all(
-              [first.emote, current, ...st.items].flatMap((e) => (e ? [preloadImage(emoteImage(e.id, 3))] : [])),
-            ),
-          );
-          await Promise.race([ready, sleep(FIRST_CARD_BUDGET_MS)]);
-          if (sessionRef.current !== s) return; // superseded (e.g. cancelled) while waiting
-        }
-        setIndex(step);
-        setSession(s);
-        setResume(null);
-      } catch (e) {
-        setLoadError(friendlyError(e));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [token, me, resetSession, api, sets],
-  );
-
-  // Resume the saved mapping as soon as we know who the user is.
-  useEffect(() => {
-    if (me && resume && !session && !loading && !loadError) void startMapping(resume, resume);
-  }, [me, resume, session, loading, loadError, startMapping]);
-
-  const pending = useMemo(() => session?.pending ?? [], [session]);
-  const rows = useMemo(() => session?.rows ?? [], [session]);
-  const extras = useMemo(() => session?.extras ?? [], [session]);
-  const steps = useMemo(() => session?.steps ?? [], [session]);
-  const stepCount = steps.length;
-  const step = steps[index] as Step | undefined;
-  const pendingDoneStep = steps.findIndex((st) => st.kind === "done" && st.section === "pending");
-  const stepOfAlias = useCallback((alias: string) => steps.findIndex((st) => stepAlias(st) === alias), [steps]);
-  const rowAtStep = useCallback((i: number) => stepRow(steps[i]), [steps]);
-  const doneStep = step?.kind === "done" ? step : undefined;
-  const section = step ? stepSection(step) : "pending";
-  /** Sections with emotes in them, in order (each is a tab). */
-  const sections = useMemo(() => [...new Set(steps.map(stepSection))], [steps]);
-  /** The emote on screen: a base emote, or (in "Not in base") a seasonal-set entry. */
-  const current = stepRow(step);
-  const mappedAliases = useMemo(() => new Set((session?.mapped ?? []).map((r) => r.alias)), [session]);
-  const isMapped = (alias: string) => mappedAliases.has(alias);
-  const extraAliases = useMemo(() => new Set(extras.map((e) => e.alias)), [extras]);
-  const isExtra = (alias: string) => extraAliases.has(alias);
-
-  // Persist the in-progress mapping on every change.
-  const persist = useCallback(
-    (s: Session) =>
-      storage.mapping.set({
-        ...s.params,
-        choices,
-        currentAlias: stepAlias(step),
-        atDone: step?.kind === "done" ? step.section : undefined,
-        removed: removedRef.current,
-      }),
-    [choices, step, storage],
-  );
-  useEffect(() => {
-    if (session) persist(session);
-  }, [session, persist, removed]);
-
-  const cancelMapping = async () => {
-    const ok = await ask({
-      title: "Start over?",
-      body: "Your picks will be thrown away. Anything already saved to your seasonal set stays there.",
-      confirmLabel: "Start over",
-      destructive: true,
-    });
-    if (!ok) return;
-    storage.mapping.set(null);
-    resetSession();
-    setResume(null);
-    setLoadError(null);
-  };
-
   // ---- Searching ----
   const runSearch = useCallback((row: SetEmote, opts?: Partial<SearchOptions>): Promise<SearchState> => {
     const s = sessionRef.current;
@@ -554,7 +375,163 @@ export function App({ children }: { children?: React.ReactNode }) {
     return p;
   }, [api]);
 
-  runSearchRef.current = runSearch;
+  // ---- Start / resume a mapping ----
+  const startMapping = useCallback(
+    async (params: MappingParams, saved?: MappingRecord) => {
+      if (!token || !me) return;
+      setLoading(true);
+      setLoadError(null);
+      setSourceLinkError(null);
+      // A pasted link (not one of the user's own sets) is only checked with 7TV now, on submit.
+      const pastedSource = !sets.some((x) => x.id === params.sourceId) && !saved;
+      if (pastedSource) {
+        const found = await api.fetchSetInfo(params.sourceId, token).catch(() => null);
+        if (!found) {
+          setSourceLinkError("No emote set found at that link. Check it and try again.");
+          setLoading(false);
+          return;
+        }
+      }
+      try {
+        const [source, target, sourceEmotes, targetEmotes] = await Promise.all([
+          api.fetchSetInfo(params.sourceId, token),
+          api.fetchSetInfo(params.targetId, token),
+          api.fetchSetEmotes(params.sourceId, token),
+          api.fetchSetEmotes(params.targetId, token),
+        ]);
+        if (!source) throw new Error("Your base set no longer exists.");
+        if (!target) throw new Error("Your seasonal set no longer exists.");
+        if (!me.editableEmoteSetIds.includes(target.id)) throw new Error("You can't edit that seasonal set.");
+        // An emote counts as already mapped when the target has something under the same name (alias).
+        const byAlias = (a: SetEmote, b: SetEmote) => a.alias.localeCompare(b.alias, undefined, { sensitivity: "base" });
+        const entries = new Map(targetEmotes.map((e) => [e.alias, e]));
+        const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).sort(byAlias);
+        const mappedRows = sourceEmotes.filter((e) => entries.has(e.alias)).sort(byAlias);
+        // Target emotes the source doesn't have (e.g. the source changed since last season).
+        const sourceAliases = new Set(sourceEmotes.map((e) => e.alias));
+        const extraRows = targetEmotes.filter((e) => !sourceAliases.has(e.alias)).sort(byAlias);
+        const steps = buildSteps(pendingRows, mappedRows, extraRows);
+        const s: Session = {
+          params: mappingParams(params),
+          source,
+          target,
+          pending: pendingRows,
+          mapped: mappedRows,
+          extras: extraRows,
+          rows: [...pendingRows, ...mappedRows],
+          steps,
+          targetUsed: usedSlots(targetEmotes),
+          tags: tagsFor(params.theme, params.customTags),
+        };
+        const restored = saved?.choices ?? {};
+        // Resume where the user was. Names are looked up rather than positions, because emotes move between
+        // sections as they get added (e.g. a pending emote added before the reload is now "mapped").
+        const doneAt = (section: Section) => steps.findIndex((st) => st.kind === "done" && st.section === section);
+        const savedDone = saved?.atDone;
+        const aliasAt = saved?.currentAlias ? steps.findIndex((st) => stepAlias(st) === saved.currentAlias) : -1;
+        const firstUndecided = s.pending.findIndex((r) => !restored[r.alias]);
+        const step =
+          savedDone && doneAt(savedDone) >= 0
+            ? doneAt(savedDone)
+            : aliasAt >= 0
+              ? aliasAt
+              : firstUndecided >= 0
+                ? firstUndecided
+                : // Every emote to add is decided: their done step. With none to add, the next section's start.
+                  Math.max(0, doneAt("pending"));
+        // Swap journal: an entry whose name is back in the target finished (or rolled back) before the page
+        // closed. One whose name is still missing was interrupted between remove and re-add; keep it so the
+        // user can restore the previous emote.
+        const removed = Object.fromEntries(
+          Object.entries(saved?.removed ?? {}).filter(([alias]) => !entries.has(alias)),
+        );
+        resetSession();
+        sessionRef.current = s;
+        setTargetEntries(
+          Object.fromEntries([...mappedRows, ...extraRows].map((r) => [r.alias, entries.get(r.alias)!])),
+        );
+        setChoices(restored);
+        setRemoved(removed);
+        // Give the first card up to FIRST_CARD_BUDGET_MS to be ready (its search plus every image on it) while
+        // the button shows a spinner, so it doesn't appear half-loaded and shift around. If that takes longer,
+        // switch anyway: the card shows its usual loading state, like any other slow card.
+        const first = stepRow(steps[step]);
+        if (first) {
+          const current = entries.get(first.alias)?.emote;
+          const ready = runSearch(first).then((st) =>
+            Promise.all(
+              [first.emote, current, ...st.items].flatMap((e) => (e ? [preloadImage(emoteImage(e.id, 3))] : [])),
+            ),
+          );
+          await Promise.race([ready, sleep(FIRST_CARD_BUDGET_MS)]);
+          if (sessionRef.current !== s) return; // superseded (e.g. cancelled) while waiting
+        }
+        setIndex(step);
+        setSession(s);
+        setResume(null);
+      } catch (e) {
+        setLoadError(friendlyError(e));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [token, me, resetSession, runSearch, api, sets],
+  );
+
+  // Resume the saved mapping as soon as we know who the user is.
+  useEffect(() => {
+    if (me && resume && !session && !loading && !loadError) void startMapping(resume, resume);
+  }, [me, resume, session, loading, loadError, startMapping]);
+
+  const pending = useMemo(() => session?.pending ?? [], [session]);
+  const rows = useMemo(() => session?.rows ?? [], [session]);
+  const extras = useMemo(() => session?.extras ?? [], [session]);
+  const steps = useMemo(() => session?.steps ?? [], [session]);
+  const stepCount = steps.length;
+  const step = steps[index] as Step | undefined;
+  const pendingDoneStep = steps.findIndex((st) => st.kind === "done" && st.section === "pending");
+  const stepOfAlias = useCallback((alias: string) => steps.findIndex((st) => stepAlias(st) === alias), [steps]);
+  const rowAtStep = useCallback((i: number) => stepRow(steps[i]), [steps]);
+  const doneStep = step?.kind === "done" ? step : undefined;
+  const section = step ? stepSection(step) : "pending";
+  /** Sections with emotes in them, in order (each is a tab). */
+  const sections = useMemo(() => [...new Set(steps.map(stepSection))], [steps]);
+  /** The emote on screen: a base emote, or (in "Not in base") a seasonal-set entry. */
+  const current = stepRow(step);
+  const mappedAliases = useMemo(() => new Set((session?.mapped ?? []).map((r) => r.alias)), [session]);
+  const isMapped = (alias: string) => mappedAliases.has(alias);
+  const extraAliases = useMemo(() => new Set(extras.map((e) => e.alias)), [extras]);
+  const isExtra = (alias: string) => extraAliases.has(alias);
+
+  // Persist the in-progress mapping on every change.
+  const persist = useCallback(
+    (s: Session) =>
+      storage.mapping.set({
+        ...s.params,
+        choices,
+        currentAlias: stepAlias(step),
+        atDone: step?.kind === "done" ? step.section : undefined,
+        removed: removedRef.current,
+      }),
+    [choices, step, storage],
+  );
+  useEffect(() => {
+    if (session) persist(session);
+  }, [session, persist, removed]);
+
+  const cancelMapping = async () => {
+    const ok = await ask({
+      title: "Start over?",
+      body: "Your picks will be thrown away. Anything already saved to your seasonal set stays there.",
+      confirmLabel: "Start over",
+      destructive: true,
+    });
+    if (!ok) return;
+    storage.mapping.set(null);
+    resetSession();
+    setResume(null);
+    setLoadError(null);
+  };
 
   /** Default search for an emote: its unaliased name, exact match, seasonal tags. Runs once per emote. */
   const ensureSearch = useCallback(
@@ -590,9 +567,9 @@ export function App({ children }: { children?: React.ReactNode }) {
       const next = rowAtStep(index + 1) ?? rowAtStep(index + 2); // skip over a summary step
       if (cancelled || !next || steppingFast()) return;
       autoSearch(next).then((st) => {
-        for (const e of st.items) new Image().src = emoteImage(e.id, 3);
+        for (const e of st.items) void preloadImage(emoteImage(e.id, 3));
       });
-      new Image().src = emoteImage(next.emote.id, 3);
+      void preloadImage(emoteImage(next.emote.id, 3));
     };
     // On an "All done!" step there's nothing to search, but the emote after it is worth preloading.
     if (!current) {
@@ -652,22 +629,23 @@ export function App({ children }: { children?: React.ReactNode }) {
    */
   const choiceOf = (alias: string): Choice =>
     choices[alias] ?? (isMapped(alias) || isExtra(alias) ? KEEP : ORIGINAL);
-  /** The emote this row should end up as in the target (null = not copied). */
-  const desiredEmote = (row: SetEmote): EmoteSummary | null => {
-    const c = choiceOf(row.alias);
-    if (c.kind === "replace") return c.emote;
-    if (c.kind === "original") return row.emote;
-    if (c.kind === "keep") return targetEntries[row.alias]?.emote ?? null;
-    return null;
+  /** What saving does with this row (see outcome() in lib/mapping.ts). */
+  const outcomeOf = (row: SetEmote) => outcome(row, choiceOf(row.alias), targetEntries[row.alias]);
+  /** The emote this row ends up as in the target (null = removed or not copied). */
+  const finalEmote = (row: SetEmote): EmoteSummary | null => {
+    const o = outcomeOf(row);
+    return o.kind === "remove" || o.kind === "skip" ? null : o.emote;
   };
-  /** Rows already in the target (in both sets, or only in the target) whose chosen emote differs from it. */
-  const isSwap = (row: SetEmote) => {
-    const cur = targetEntries[row.alias];
-    const want = desiredEmote(row);
-    return !!cur && !!want && want.id !== cur.emote.id;
+  const isSwap = (row: SetEmote) => outcomeOf(row).kind === "swap";
+  /** " (swapping 2, removing 1)" for these rows, or "" when none of them change. */
+  const changeNote = (rs: SetEmote[]) => {
+    const swapping = rs.filter(isSwap).length;
+    const removing = rs.filter((r) => outcomeOf(r).kind === "remove").length;
+    const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`].filter(Boolean);
+    return parts.length ? ` (${parts.join(", ")})` : "";
   };
 
-  const plan = pending.filter((r) => choiceOf(r.alias).kind !== "exclude" && applyStates[r.alias]?.state !== "added");
+  const plan = pending.filter((r) => outcomeOf(r).kind === "add" && applyStates[r.alias]?.state !== "added");
   const swaps = [...(session?.mapped ?? []), ...extras].filter(isSwap);
   /**
    * Seasonal-set entries the user chose to remove, from either section that's already in the target. The entry
@@ -675,7 +653,7 @@ export function App({ children }: { children?: React.ReactNode }) {
    */
   const removalEntries = (sess: Session | null): SetEmote[] =>
     [...(sess?.mapped ?? []), ...(sess?.extras ?? [])].flatMap((r) =>
-      choiceOf(r.alias).kind === "remove" && targetEntries[r.alias] ? [targetEntries[r.alias]] : [],
+      outcomeOf(r).kind === "remove" ? [targetEntries[r.alias]] : [],
     );
   const removals = removalEntries(session).filter((e) => applyStates[e.alias]?.state !== "removed");
   const addedCount = pending.filter((r) => applyStates[r.alias]?.state === "added").length;
@@ -741,7 +719,7 @@ export function App({ children }: { children?: React.ReactNode }) {
       }
       setPreparing(false);
       const freshByAlias = new Map(fresh.map((e) => [e.alias, e]));
-      const toAdd = s.pending.filter((r) => choiceOf(r.alias).kind !== "exclude" && !freshByAlias.has(r.alias));
+      const toAdd = s.pending.filter((r) => outcomeOf(r).kind === "add" && !freshByAlias.has(r.alias));
       const alreadyThere = s.pending.filter((r) => freshByAlias.has(r.alias));
 
       // A swap is only safe if the target still holds exactly what we showed the user.
@@ -882,7 +860,7 @@ export function App({ children }: { children?: React.ReactNode }) {
 
       for (const row of full || fatal ? [] : toAdd) {
         if (sessionRef.current !== s) break;
-        const emote = desiredEmote(row)!;
+        const emote = finalEmote(row)!;
         // A name left empty by an interrupted swap keeps the zero-width setting the target had.
         const interrupted = removedRef.current[row.alias];
         setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "running" } }));
@@ -901,7 +879,7 @@ export function App({ children }: { children?: React.ReactNode }) {
       for (const row of full || fatal ? [] : toSwap) {
         if (sessionRef.current !== s) break;
         const cur = targetEntries[row.alias];
-        const emote = desiredEmote(row)!;
+        const emote = finalEmote(row)!;
         setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "running" } }));
         journal(s, row.alias, { emote: cur.emote, zeroWidth: cur.flags.zeroWidth });
         try {
@@ -1010,8 +988,8 @@ export function App({ children }: { children?: React.ReactNode }) {
     const c = choices[row.alias];
     if (filter === "all") return true;
     if (filter === "errors") return applyStates[row.alias]?.state === "error";
-    if (filter === "changed") return (isMapped(row.alias) || isExtra(row.alias)) && isSwap(row);
-    if (filter === "remove") return (isExtra(row.alias) || isMapped(row.alias)) && c?.kind === "remove";
+    if (filter === "changed") return isSwap(row);
+    if (filter === "remove") return outcomeOf(row).kind === "remove";
     if (isMapped(row.alias) || isExtra(row.alias)) return false;
     if (filter === "undecided") return !c;
     return c?.kind === filter;
@@ -1144,45 +1122,40 @@ export function App({ children }: { children?: React.ReactNode }) {
     <LogInAgainContext.Provider value={logInAgain}>
       <main>
         {dialog}
-        <ModalOverlay
-          className="modal-overlay"
+        <ModalShell
           isOpen={!!saveDialog}
-          onOpenChange={(open) => !open && answerSave(false)}
-          isDismissable={saveDialog?.kind !== "saving" && saveDialog?.dismissable !== false}
-          isKeyboardDismissDisabled={saveDialog?.kind === "saving" || saveDialog?.dismissable === false}
+          dismissable={saveDialog?.kind !== "saving" && saveDialog?.dismissable !== false}
+          alert={!!saveDialog?.confirmLabel}
+          onDismiss={() => answerSave(false)}
         >
-          <Modal className="modal">
-            <Dialog className="dialog" role={saveDialog?.confirmLabel ? "alertdialog" : "dialog"}>
-              {saveDialog?.kind === "saving" ? (
-                // Can't be dismissed or stopped: it closes itself once every change has been tried.
-                <>
-                  <Heading slot="title">Saving to {targetName}…</Heading>
-                  <ProgressBar
-                    className="progress"
-                    aria-label={`Saving to ${targetName}`}
-                    value={runDone}
-                    maxValue={run?.length || 1}
-                    valueLabel={`${runDone} of ${plural(run?.length ?? 0, "change")}`}
-                  >
-                    {({ percentage, valueText }) => (
-                      <>
-                        <div className="progress-track">
-                          <div className="progress-fill" style={{ width: `${percentage}%` }} />
-                        </div>
-                        <span className="muted small">{valueText}</span>
-                      </>
-                    )}
-                  </ProgressBar>
-                  {pause && pause.bucket !== "search" && (
-                    <p className="notice small">7TV asked us to slow down. Carrying on in {pause.seconds}s.</p>
-                  )}
-                </>
-              ) : (
-                saveDialog && <DialogContent {...saveDialog} onClose={answerSave} />
+          {saveDialog?.kind === "saving" ? (
+            // Can't be dismissed or stopped: it closes itself once every change has been tried.
+            <>
+              <Heading slot="title">Saving to {targetName}…</Heading>
+              <ProgressBar
+                className="progress"
+                aria-label={`Saving to ${targetName}`}
+                value={runDone}
+                maxValue={run?.length || 1}
+                valueLabel={`${runDone} of ${plural(run?.length ?? 0, "change")}`}
+              >
+                {({ percentage, valueText }) => (
+                  <>
+                    <div className="progress-track">
+                      <div className="progress-fill" style={{ width: `${percentage}%` }} />
+                    </div>
+                    <span className="muted small">{valueText}</span>
+                  </>
+                )}
+              </ProgressBar>
+              {pause && pause.bucket !== "search" && (
+                <p className="notice small">7TV asked us to slow down. Carrying on in {pause.seconds}s.</p>
               )}
-            </Dialog>
-          </Modal>
-        </ModalOverlay>
+            </>
+          ) : (
+            saveDialog && <DialogContent {...saveDialog} onClose={answerSave} />
+          )}
+        </ModalShell>
         {header}
         {me && clipboardWarning && (
           <div className="card narrow notice-card" role="alert">
@@ -1246,23 +1219,13 @@ export function App({ children }: { children?: React.ReactNode }) {
                   {session.mapped.length > 0 && (
                     <span className="muted">
                       {session.mapped.length} already added
-                      {(() => {
-                        const swapping = swaps.filter((r) => isMapped(r.alias)).length;
-                        const removing = session.mapped.filter((r) => choices[r.alias]?.kind === "remove").length;
-                        const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`];
-                        return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
-                      })()}
+                      {changeNote(session.mapped)}
                     </span>
                   )}
                   {extras.length > 0 && (
                     <span className="muted">
                       {extras.length} not in base
-                      {(() => {
-                        const swapping = swaps.filter((r) => isExtra(r.alias)).length;
-                        const removing = extras.filter((e) => choices[e.alias]?.kind === "remove").length;
-                        const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`];
-                        return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
-                      })()}
+                      {changeNote(extras)}
                     </span>
                   )}
                   {capacity != null && free != null && (
@@ -1369,108 +1332,103 @@ export function App({ children }: { children?: React.ReactNode }) {
               </section>
             )}
           </>
-        ) : (
-          <>
-
-            {resume ? (
-              <section className="card narrow center stack">
-                {loadError ? (
-                  <>
-                    <p>Couldn&apos;t pick up where you left off.</p>
-                    <p className="error">
-                      <ErrorText message={loadError} />
-                    </p>
-                    <div className="buttons-row">
-                      <Button className="btn primary" onPress={() => void startMapping(resume, resume)}>
-                        Try again
-                      </Button>
-                      <Button className="btn ghost-danger" onPress={cancelMapping}>
-                        Start over
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="loading-card">
-                    <Spinner label="Picking up where you left off" />
-                    <p className="muted">Picking up where you left off…</p>
-                  </div>
-                )}
-              </section>
-            ) : account !== "ready" ? (
-              <LoadingCard message="Loading your emote sets…" />
-            ) : (
-              <section className="card setup" aria-label="Choose your sets">
-                <SetPicker
-                  label="Base set"
-                  description="Your regular emote set"
-                  sets={sets}
-                  value={sourceId}
-                  onChange={(id) => {
-                    setSourceId(id);
-                    setSourceLinkError(null);
-                  }}
-                  allowCustom
-                  linkError={sourceLinkError}
-                />
-                <SetPicker
-                  label="Target set"
-                  description="Where to add the seasonal emotes"
-                  sets={sets}
-                  value={targetId}
-                  onChange={setTargetId}
-                  disabledId={sourceId}
-                />
-                <div className="field-group">
-                  <SelectField
-                    label="Theme"
-                    items={themeItems}
-                    value={theme}
-                    onChange={(id) => setTheme(id as Theme)}
-                    description={theme === "custom" ? undefined : `Search for emotes tagged ${tags.join(" or ")}`}
-                  />
-                  {theme === "custom" && (
-                    <TextField className="field" value={customTags} onChange={setCustomTags}>
-                      <Label className="visually-hidden">Custom tags</Label>
-                      <Input placeholder="Tags to look for, e.g. spring, easter" />
-                    </TextField>
-                  )}
-                </div>
-                <SelectField
-                  label="Sort by"
-                  items={SORT_OPTIONS}
-                  value={sortBy}
-                  onChange={(id) => setSortBy(id as SortBy)}
-                />
-                <div className="actions">
-                  <Button
-                    className="btn primary"
-                    isDisabled={!sourceId || !targetId || sourceId === targetId || !tags.length}
-                    isPending={loading}
-                    onPress={() =>
-                      sourceId && targetId && void startMapping({ sourceId, targetId, theme, customTags, sortBy })
-                    }
-                  >
-                    {({ isPending }) => (
-                      <>
-                        {isPending && <Spinner label="Loading your sets" size="sm" />}
-                        Start picking
-                      </>
-                    )}
+        ) : resume ? (
+          <section className="card narrow center stack">
+            {loadError ? (
+              <>
+                <p>Couldn&apos;t pick up where you left off.</p>
+                <p className="error">
+                  <ErrorText message={loadError} />
+                </p>
+                <div className="buttons-row">
+                  <Button className="btn primary" onPress={() => void startMapping(resume, resume)}>
+                    Try again
                   </Button>
-                  {sourceId && sourceId === targetId && (
-                    <span className="error small">Your base and seasonal sets need to be different.</span>
-                  )}
-                  {theme === "custom" && !tags.length && <span className="muted small">Add at least one tag.</span>}
-                  {loadError && <span className="error small">{loadError}</span>}
-                  {sets.length === 0 && (
-                    <span className="muted small">
-                      You can&apos;t edit any emote sets yet. Create your seasonal set on 7tv.app, then reload.
-                    </span>
-                  )}
+                  <Button className="btn ghost-danger" onPress={cancelMapping}>
+                    Start over
+                  </Button>
                 </div>
-              </section>
+              </>
+            ) : (
+              <div className="loading-card">
+                <Spinner label="Picking up where you left off" />
+                <p className="muted">Picking up where you left off…</p>
+              </div>
             )}
-          </>
+          </section>
+        ) : account !== "ready" ? (
+          <LoadingCard message="Loading your emote sets…" />
+        ) : (
+          <section className="card setup" aria-label="Choose your sets">
+            <SetPicker
+              label="Base set"
+              description="Your regular emote set"
+              sets={sets}
+              value={sourceId}
+              onChange={(id) => {
+                setSourceId(id);
+                setSourceLinkError(null);
+              }}
+              allowCustom
+              linkError={sourceLinkError}
+            />
+            <SetPicker
+              label="Target set"
+              description="Where to add the seasonal emotes"
+              sets={sets}
+              value={targetId}
+              onChange={setTargetId}
+              disabledId={sourceId}
+            />
+            <div className="field-group">
+              <SelectField
+                label="Theme"
+                items={themeItems}
+                value={theme}
+                onChange={(id) => setTheme(id as Theme)}
+                description={theme === "custom" ? undefined : `Search for emotes tagged ${tags.join(" or ")}`}
+              />
+              {theme === "custom" && (
+                <TextField className="field" value={customTags} onChange={setCustomTags}>
+                  <Label className="visually-hidden">Custom tags</Label>
+                  <Input placeholder="Tags to look for, e.g. spring, easter" />
+                </TextField>
+              )}
+            </div>
+            <SelectField
+              label="Sort by"
+              items={SORT_OPTIONS}
+              value={sortBy}
+              onChange={(id) => setSortBy(id as SortBy)}
+            />
+            <div className="actions">
+              <Button
+                className="btn primary"
+                isDisabled={!sourceId || !targetId || sourceId === targetId || !tags.length}
+                isPending={loading}
+                onPress={() =>
+                  sourceId && targetId && void startMapping({ sourceId, targetId, theme, customTags, sortBy })
+                }
+              >
+                {({ isPending }) => (
+                  <>
+                    {isPending && <Spinner label="Loading your sets" size="sm" />}
+                    Start picking
+                  </>
+                )}
+              </Button>
+              {sourceId && sourceId === targetId && (
+                <span className="error small">Your base and seasonal sets need to be different.</span>
+              )}
+              {theme === "custom" && !tags.length && <span className="muted small">Add at least one tag.</span>}
+              {loadError && <span className="error small">{loadError}</span>}
+              {sets.length === 0 && (
+                <span className="muted small">
+                  You can&apos;t edit any emote sets yet. Create your seasonal set on 7tv.app, then reload.
+                </span>
+              )}
+            </div>
+          </section>
         )}
         {children}
       </main>
