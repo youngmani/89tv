@@ -113,8 +113,10 @@ img { color: transparent; }
 /* ---------- Header ---------- */
 .top { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 28px; text-align: center; }
 .top h1 { margin: 0; font-size: 34px; font-weight: 800; letter-spacing: -0.02em; }
-/* Same overlap as the favicon (about 3px at 46px), scaled to the heading. */
-.wordmark .nine { color: var(--accent); margin-left: -0.065em; transition: color 0.5s; }
+/* The 9 tucks into the 8. Letter-spacing (only after the 8, so "TV" keeps the heading's spacing) rather than a
+   margin, so a text selection stays one continuous highlight. */
+.wordmark .eight { letter-spacing: -0.15em; }
+.wordmark .nine { color: var(--accent); transition: color 0.5s; }
 .top .logo { display: inline-block; transform: translateY(-1px); }
 .tagline { margin: 0; color: var(--muted); }
 .me { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 14px; }
