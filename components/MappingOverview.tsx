@@ -27,10 +27,8 @@ function result(
   row: SetEmote,
   c: Choice | undefined,
   current: SetEmote | undefined,
-  extra: boolean,
 ): EmoteSummary | "exclude" {
   if (c?.kind === "exclude" || c?.kind === "remove") return "exclude";
-  if (extra) return row.emote;
   if (c?.kind === "replace") return c.emote;
   if (current && c?.kind !== "original") return current.emote; // kept as-is (or not reviewed)
   return row.emote;
@@ -47,7 +45,9 @@ function describe(
   const what = extra
     ? c?.kind === "remove"
       ? "only in the seasonal set, removing"
-      : "only in the seasonal set, keeping"
+      : t && t !== "exclude" && current
+        ? `only in the seasonal set, swap ${current.emote.defaultName} for ${t.defaultName} by ${ownerName(t)}`
+        : "only in the seasonal set, keeping"
     : current && c?.kind === "remove"
       ? `removing ${current.emote.defaultName} from the seasonal set`
       : current
@@ -74,7 +74,7 @@ function MappingOverviewImpl({
   applyStates,
   onJump,
 }: {
-  /** `extra` marks the section of target-only emotes (keep or remove). */
+  /** `extra` marks the section of target-only emotes (keep, swap or remove). */
   sections: { title: string; rows: Row[]; extra?: boolean }[];
   current: number;
   choices: Record<string, Choice>;
@@ -100,7 +100,7 @@ function MappingOverviewImpl({
                   const changes = !!t && t !== "exclude";
                   const extra = !!section.extra;
                   // Every chip reads base → what the seasonal set ends up with (one image when they're the same).
-                  const end = result(row, c, cur, extra);
+                  const end = result(row, c, cur);
                   const differs = end !== "exclude" && end.id !== row.emote.id;
                   return (
                     <Button
@@ -108,11 +108,7 @@ function MappingOverviewImpl({
                       className={[
                         "chip",
                         index === current ? "current" : "",
-                        extra
-                          ? c?.kind === "remove"
-                            ? "exclude"
-                            : "mapped"
-                          : cur
+                        cur
                             ? c?.kind === "remove"
                               ? "exclude"
                               : changes

@@ -75,7 +75,8 @@ function shouldIgnoreKey(e: KeyboardEvent) {
 }
 
 /**
- * The emote currently being mapped. Picking anything advances to the next emote.
+ * The emote currently being mapped. Picking anything advances to the next emote. Also used for emotes only in
+ * the seasonal set (`inBase` false): the same card without a base emote, so they can be kept, swapped or removed.
  * Keys: 0 keep the base emote (or the current one, if it's already in the seasonal set) · 1–9 pick a result · X skip ·
  * →/Enter next · ← back.
  */
@@ -85,6 +86,7 @@ export function MappingFocus({
   canPrev,
   canNext,
   inTarget,
+  inBase = true,
   previous,
   tags,
   choice,
@@ -103,6 +105,8 @@ export function MappingFocus({
   canNext: boolean;
   /** What the target holds under this name, when the emote is already mapped. */
   inTarget: SetEmote | undefined;
+  /** False for an emote only in the seasonal set: `source` is then its seasonal-set entry, and there's no base. */
+  inBase?: boolean;
   /** The emote that held this name before a swap that was interrupted (page closed mid-swap). */
   previous: RemovedEntry | undefined;
   /** The theme's tags, for labelling the tag filter. */
@@ -197,7 +201,7 @@ export function MappingFocus({
           <div className="muted small">
             {aliased ? <>7TV name: {source.emote.defaultName} · </> : null}
             {source.flags.zeroWidth ? "zero-width · " : ""}
-            {mapped ? "already added · " : ""}
+            {!inBase ? "only in your seasonal set · " : mapped ? "already added · " : ""}
             {position}
             {decided ? " · picked" : ""}
           </div>
@@ -287,7 +291,7 @@ export function MappingFocus({
             hotkey="0"
           />
         )}
-        {(!mapped || current?.id !== source.emote.id) && (
+        {inBase && (!mapped || current?.id !== source.emote.id) && (
           <Tile
             emote={source.emote}
             selected={choice.kind === "original" && !keepsCurrent}

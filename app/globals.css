@@ -252,8 +252,8 @@ img { color: transparent; }
   background: var(--panel-2); color: var(--muted);
 }
 .section-tab[data-selected] .section-tab-count { background: var(--accent); color: var(--accent-text); }
-.react-aria-TabPanel { outline: none; }
-.react-aria-TabPanel[data-focus-visible] > .card { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* The tabs wrapper and panel get data-focus-visible while focus is inside them; only the tab itself shows a ring. */
+.section-tabs, .react-aria-TabPanel { outline: none; }
 /* Arrows are pinned to the 96px image row (not centred on the title block), so steps with different
    text heights never move them. */
 .focus-head { display: flex; align-items: flex-start; justify-content: center; gap: 20px; width: 100%; }

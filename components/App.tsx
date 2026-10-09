@@ -17,7 +17,6 @@ import {
   TextField,
 } from "react-aria-components";
 import { type DialogOptions, DialogContent, useDialog } from "@/components/Dialog";
-import { ExtraFocus } from "@/components/ExtraFocus";
 import { MappingFocus } from "@/components/MappingFocus";
 import { MappingOverview } from "@/components/MappingOverview";
 import { MappingSummary } from "@/components/MappingSummary";
@@ -391,7 +390,9 @@ export function App({ children }: { children?: React.ReactNode }) {
         );
         resetSession();
         sessionRef.current = s;
-        setTargetEntries(Object.fromEntries(mappedRows.map((r) => [r.alias, entries.get(r.alias)!])));
+        setTargetEntries(
+          Object.fromEntries([...mappedRows, ...extraRows].map((r) => [r.alias, entries.get(r.alias)!])),
+        );
         setChoices(restored);
         setRemoved(removed);
         // Give the first card up to FIRST_CARD_BUDGET_MS to be ready (its search plus every image on it) while
@@ -438,11 +439,10 @@ export function App({ children }: { children?: React.ReactNode }) {
   const section = step ? stepSection(step) : "pending";
   /** Sections with emotes in them, in order (each is a tab). */
   const sections = useMemo(() => [...new Set(steps.map(stepSection))], [steps]);
-  /** The source emote on screen (sections 1 and 2). */
+  /** The emote on screen: a base emote, or (in "Not in base") a seasonal-set entry. */
   const current = stepRow(step);
-  /** The target-only emote on screen (section 3). */
-  const currentExtra = step?.kind === "extra" ? step.entry : undefined;
-  const isMapped = (alias: string) => alias in targetEntries;
+  const mappedAliases = useMemo(() => new Set((session?.mapped ?? []).map((r) => r.alias)), [session]);
+  const isMapped = (alias: string) => mappedAliases.has(alias);
   const extraAliases = useMemo(() => new Set(extras.map((e) => e.alias)), [extras]);
   const isExtra = (alias: string) => extraAliases.has(alias);
 
@@ -641,7 +641,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     if (c.kind === "keep") return targetEntries[row.alias]?.emote ?? null;
     return null;
   };
-  /** Already-mapped rows whose chosen emote differs from what the target holds now. */
+  /** Rows already in the target (in both sets, or only in the target) whose chosen emote differs from it. */
   const isSwap = (row: SetEmote) => {
     const cur = targetEntries[row.alias];
     const want = desiredEmote(row);
@@ -649,17 +649,15 @@ export function App({ children }: { children?: React.ReactNode }) {
   };
 
   const plan = pending.filter((r) => choiceOf(r.alias).kind !== "exclude" && applyStates[r.alias]?.state !== "added");
-  const swaps = session?.mapped.filter(isSwap) ?? [];
+  const swaps = [...(session?.mapped ?? []), ...extras].filter(isSwap);
   /**
-   * Seasonal-set entries the user chose to remove: target-only emotes, plus emotes in both sets marked
-   * "remove" (for those, the entry is whatever the seasonal set currently holds under that name).
+   * Seasonal-set entries the user chose to remove, from either section that's already in the target. The entry
+   * is whatever the seasonal set currently holds under that name (it may have been swapped since loading).
    */
-  const removalEntries = (sess: Session | null): SetEmote[] => [
-    ...(sess?.extras ?? []).filter((e) => choiceOf(e.alias).kind === "remove"),
-    ...(sess?.mapped ?? []).flatMap((r) =>
+  const removalEntries = (sess: Session | null): SetEmote[] =>
+    [...(sess?.mapped ?? []), ...(sess?.extras ?? [])].flatMap((r) =>
       choiceOf(r.alias).kind === "remove" && targetEntries[r.alias] ? [targetEntries[r.alias]] : [],
-    ),
-  ];
+    );
   const removals = removalEntries(session).filter((e) => applyStates[e.alias]?.state !== "removed");
   const addedCount = pending.filter((r) => applyStates[r.alias]?.state === "added").length;
   const capacity = session?.target.capacity ?? null;
@@ -730,7 +728,7 @@ export function App({ children }: { children?: React.ReactNode }) {
       // A swap is only safe if the target still holds exactly what we showed the user.
       const toSwap: SetEmote[] = [];
       const stale: SetEmote[] = [];
-      for (const r of s.mapped.filter(isSwap)) {
+      for (const r of [...s.mapped, ...s.extras].filter(isSwap)) {
         const now = freshByAlias.get(r.alias);
         if (now && now.emote.id === targetEntries[r.alias]?.emote.id) toSwap.push(r);
         else stale.push(r);
@@ -988,7 +986,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     const c = choices[row.alias];
     if (filter === "all") return true;
     if (filter === "errors") return applyStates[row.alias]?.state === "error";
-    if (filter === "changed") return isMapped(row.alias) && isSwap(row);
+    if (filter === "changed") return (isMapped(row.alias) || isExtra(row.alias)) && isSwap(row);
     if (filter === "remove") return (isExtra(row.alias) || isMapped(row.alias)) && c?.kind === "remove";
     if (isMapped(row.alias) || isExtra(row.alias)) return false;
     if (filter === "undecided") return !c;
@@ -998,7 +996,7 @@ export function App({ children }: { children?: React.ReactNode }) {
   const sectionRows = (kind: Step["kind"]) =>
     steps.flatMap((st, index) => {
       if (st.kind !== kind) return [];
-      const row = st.kind === "extra" ? st.entry : stepRow(st)!;
+      const row = stepRow(st)!;
       return matchesFilter(row) ? [{ row, index }] : [];
     });
   const sectionTitle: Record<Section, string> = {
@@ -1024,7 +1022,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     { id: "replace", label: `Seasonal picks (${stats.replace})` },
     { id: "original", label: `Copied as-is (${stats.original})` },
     { id: "exclude", label: `Skipped (${stats.exclude})` },
-    ...(session?.mapped.length ? [{ id: "changed", label: `Swapping (${swaps.length})` }] : []),
+    ...(session?.mapped.length || extras.length ? [{ id: "changed", label: `Swapping (${swaps.length})` }] : []),
     ...(extras.length ? [{ id: "remove", label: `Removing (${stats.remove})` }] : []),
     { id: "errors", label: `Failed (${stats.errors})` },
   ];
@@ -1073,24 +1071,13 @@ export function App({ children }: { children?: React.ReactNode }) {
       previous={removed[current.alias]}
       tags={session.tags}
       choice={choiceOf(current.alias)}
-      decided={!!choices[current.alias] && !isMapped(current.alias)}
+      inBase={!isExtra(current.alias)}
+      decided={!!choices[current.alias] && !isMapped(current.alias) && !isExtra(current.alias)}
       search={searches[current.alias]}
       apply={applyStates[current.alias]}
       defaultSort={session.params.sortBy}
       onChoose={choose}
       onSearch={(opts) => void runSearch(current, opts)}
-      onNavigate={navigate}
-    />
-  ) : currentExtra && step?.kind === "extra" ? (
-    <ExtraFocus
-      key={`extra:${currentExtra.alias}`}
-      entry={currentExtra}
-      position={`${step.n} of ${step.of}`}
-      canPrev={index > 0}
-      canNext={index < stepCount - 1}
-      choice={choiceOf(currentExtra.alias)}
-      apply={applyStates[currentExtra.alias]}
-      onChoose={choose}
       onNavigate={navigate}
     />
   ) : null;
@@ -1230,8 +1217,9 @@ export function App({ children }: { children?: React.ReactNode }) {
                   <span className="muted">
                     {session.mapped.length} already added
                     {(() => {
+                      const swapping = swaps.filter((r) => isMapped(r.alias)).length;
                       const removing = session.mapped.filter((r) => choices[r.alias]?.kind === "remove").length;
-                      const parts = [swaps.length && `swapping ${swaps.length}`, removing && `removing ${removing}`];
+                      const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`];
                       return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
                     })()}
                   </span>
@@ -1240,8 +1228,10 @@ export function App({ children }: { children?: React.ReactNode }) {
                   <span className="muted">
                     {extras.length} not in base
                     {(() => {
+                      const swapping = swaps.filter((r) => isExtra(r.alias)).length;
                       const removing = extras.filter((e) => choices[e.alias]?.kind === "remove").length;
-                      return removing ? ` (removing ${removing})` : "";
+                      const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`];
+                      return parts.some(Boolean) ? ` (${parts.filter(Boolean).join(", ")})` : "";
                     })()}
                   </span>
                 )}

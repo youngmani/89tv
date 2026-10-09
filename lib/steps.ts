@@ -45,6 +45,6 @@ export const stepSection = (s: Step): Section => (s.kind === "done" ? s.section 
 export const stepAlias = (s: Step | undefined): string | null =>
   !s ? null : "row" in s ? s.row.alias : "entry" in s ? s.entry.alias : null;
 
-/** The source emote shown on a step (pending or mapped), if any. */
+/** The emote a step is about: a base emote (pending or mapped), or a seasonal-set entry (extra). */
 export const stepRow = (s: Step | undefined): SetEmote | undefined =>
-  s && (s.kind === "pending" || s.kind === "mapped") ? s.row : undefined;
+  !s || s.kind === "done" ? undefined : s.kind === "extra" ? s.entry : s.row;
