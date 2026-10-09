@@ -298,6 +298,10 @@ img { color: transparent; }
   letter-spacing: 0.06em; color: var(--accent);
 }
 .tile .hotkey { position: absolute; bottom: 5px; right: 6px; }
+.tile .zero-width {
+  position: absolute; bottom: 7px; left: 7px; width: 14px; height: 14px;
+  fill: none; stroke: var(--muted); stroke-width: 1.5;
+}
 .tile-wrap .ext {
   position: absolute; top: 4px; right: 6px; font-size: 12px; text-decoration: none; color: var(--muted);
   padding: 0 3px; border-radius: 4px;

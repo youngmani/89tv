@@ -26,6 +26,7 @@ function Tile({
   note,
   isDisabled,
   index,
+  zeroWidth = emote.flags.defaultZeroWidth,
 }: {
   emote: EmoteSummary;
   selected: boolean;
@@ -37,6 +38,8 @@ function Tile({
   note?: string;
   /** Position in the grid, to stagger the loading placeholder. */
   index?: number;
+  /** Whether to mark it zero-width: how it's set in its set, or (for search results) the emote's default. */
+  zeroWidth?: boolean;
 }) {
   return (
     <div className="tile-wrap">
@@ -45,13 +48,21 @@ function Tile({
         isSelected={selected}
         isDisabled={isDisabled}
         onChange={onSelect}
-        aria-label={`${badge ? `${badge}: ` : ""}${emote.defaultName} by ${ownerName(emote)}${note ? `, ${note}` : ""}`}
+        aria-label={`${badge ? `${badge}: ` : ""}${emote.defaultName} by ${ownerName(emote)}${zeroWidth ? ", zero-width" : ""}${note ? `, ${note}` : ""}`}
       >
         {badge && <span className="badge">{badge}</span>}
         <Image src={emoteImage(emote.id, 3)} alt="" index={index} />
         <span className="name">{emote.defaultName}</span>
         <span className="owner">{ownerName(emote)}</span>
         {note && <span className="note">{note}</span>}
+        {zeroWidth && (
+          // Two overlapping squares: a zero-width emote is an overlay on the emote before it.
+          <svg className="zero-width" viewBox="0 0 16 16" aria-hidden>
+            <title>Zero-width</title>
+            <rect x="1.5" y="1.5" width="9" height="9" rx="2" />
+            <rect x="5.5" y="5.5" width="9" height="9" rx="2" />
+          </svg>
+        )}
         {hotkey && (
           <kbd className="hotkey" aria-hidden>
             {hotkey}
@@ -300,6 +311,7 @@ export function MappingFocus({
             selected={keepsCurrent}
             onSelect={() => onChoose({ kind: "keep" }, true)}
             badge={current.deleted ? "current (deleted)" : "current"}
+            zeroWidth={inTarget?.flags.zeroWidth}
             hotkey="0"
           />
         )}
@@ -309,6 +321,7 @@ export function MappingFocus({
             selected={choice.kind === "original" && !keepsCurrent}
             onSelect={() => onChoose({ kind: "original" }, true)}
             badge="base"
+            zeroWidth={source.flags.zeroWidth}
             hotkey={mapped ? undefined : "0"}
           />
         )}
