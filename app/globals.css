@@ -232,6 +232,28 @@ img { color: transparent; }
 
 /* ---------- Focus card ---------- */
 .focus { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+
+/* Section tabs above the card (only when there's more than one section). */
+.section-tab-list {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; width: fit-content; max-width: 100%;
+  margin: 0 auto 10px; padding: 4px; border: 1px solid var(--border); border-radius: 12px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+}
+.section-tab {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 8px;
+  font-size: 14px; font-weight: 500; color: var(--muted); cursor: pointer; outline: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+.section-tab[data-hovered] { color: var(--text); }
+.section-tab[data-selected] { background: var(--accent-soft); color: var(--accent); }
+.section-tab[data-focus-visible] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.section-tab-count {
+  min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 12px; text-align: center;
+  background: var(--panel-2); color: var(--muted);
+}
+.section-tab[data-selected] .section-tab-count { background: var(--accent); color: var(--accent-text); }
+.react-aria-TabPanel { outline: none; }
+.react-aria-TabPanel[data-focus-visible] > .card { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Arrows are pinned to the 96px image row (not centred on the title block), so steps with different
    text heights never move them. */
 .focus-head { display: flex; align-items: flex-start; justify-content: center; gap: 20px; width: 100%; }

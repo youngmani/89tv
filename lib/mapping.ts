@@ -1,5 +1,6 @@
 import type { EmoteSummary, SearchResult, SortBy } from "./seventv";
 import { load, save } from "./storage";
+import type { Section } from "./steps";
 
 /**
  * What to do with one emote name. "keep" applies to names already in the target (leave them as they are);
@@ -91,7 +92,9 @@ export interface MappingRecord {
   choices: Record<string, Choice>;
   /** Alias of the emote on screen; aliases are stable even when the pending list shrinks. */
   currentAlias: string | null;
-  /** Which "All done!" step the user was on, if any: after the emotes to add, or at the very end. */
+  /** The section whose "done" step the user was on, if any. */
+  atDone?: Section;
+  /** From older versions: "summary" was the done step after the emotes to add, "end" the last one. */
   atStep?: "summary" | "end";
   /**
    * Swap journal: entries removed from the target whose replacement hasn't been confirmed yet. Written

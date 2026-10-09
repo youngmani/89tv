@@ -15,8 +15,6 @@ export function ExtraFocus({
   position,
   canPrev,
   canNext,
-  sourceName,
-  targetName,
   choice,
   apply,
   onChoose,
@@ -26,8 +24,6 @@ export function ExtraFocus({
   position: string;
   canPrev: boolean;
   canNext: boolean;
-  sourceName: string;
-  targetName: string;
   choice: Choice;
   apply: ApplyState | undefined;
   onChoose: (choice: Choice, advance: boolean) => void;
@@ -40,7 +36,7 @@ export function ExtraFocus({
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (e.metaKey || e.ctrlKey || e.altKey || !t?.closest) return;
-      if (t.closest("input, textarea, [role=listbox], [role=dialog]")) return;
+      if (t.closest("input, textarea, [role=listbox], [role=dialog], [role=tab]")) return;
       if ((e.key === "Enter" || e.key === " ") && t.closest("button, a, [role=button]")) return;
       const k = e.key.toLowerCase();
       if (e.key === "ArrowLeft" && canPrev) onNavigate(-1);
@@ -55,7 +51,7 @@ export function ExtraFocus({
   }, [choice, canPrev, canNext, onChoose, onNavigate]);
 
   return (
-    <section className="card focus" aria-label={`${entry.alias}, only in ${targetName}`}>
+    <section className="card focus" aria-label={`${entry.alias}, not in base`}>
       <div className="focus-head">
         <Button
           className={`btn nav${canPrev ? "" : " invisible"}`}
@@ -69,7 +65,7 @@ export function ExtraFocus({
           <img src={emoteImage(entry.emote.id, 3)} alt="" />
           <div className={`alias${removing ? " struck" : ""}`}>{entry.alias}</div>
           <div className="muted small">
-            in {targetName} but not in {sourceName} · {position}
+            only in your seasonal set · {position}
           </div>
         </div>
         <Button
@@ -96,7 +92,7 @@ export function ExtraFocus({
           <b>Couldn&apos;t remove this one:</b> {apply.message}
         </div>
       )}
-      {apply?.state === "removed" && <div className="ok small">✓ Removed from {targetName}</div>}
+      {apply?.state === "removed" && <div className="ok small">✓ Removed</div>}
 
       <div className="buttons-row">
         <ToggleButton className="btn choice" isSelected={!removing} onChange={() => onChoose({ kind: "keep" }, true)}>
@@ -107,7 +103,7 @@ export function ExtraFocus({
           isSelected={removing}
           onChange={() => onChoose({ kind: "remove" }, true)}
         >
-          Remove from {targetName} <kbd aria-hidden>X</kbd>
+          Remove from seasonal set <kbd aria-hidden>X</kbd>
         </ToggleButton>
       </div>
 

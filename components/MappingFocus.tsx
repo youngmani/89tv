@@ -69,7 +69,7 @@ function Tile({
 function shouldIgnoreKey(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
   if (e.metaKey || e.ctrlKey || e.altKey || !t?.closest) return true;
-  if (t.closest("input, textarea, [role=listbox], [role=dialog]")) return true;
+  if (t.closest("input, textarea, [role=listbox], [role=dialog], [role=tab]")) return true;
   if ((e.key === "Enter" || e.key === " ") && t.closest("button, a, [role=button], [role=option]")) return true;
   return false;
 }
@@ -87,7 +87,6 @@ export function MappingFocus({
   inTarget,
   previous,
   tags,
-  targetName,
   choice,
   decided,
   search,
@@ -108,8 +107,6 @@ export function MappingFocus({
   previous: RemovedEntry | undefined;
   /** The theme's tags, for labelling the tag filter. */
   tags: string[];
-  /** The seasonal set's name, used in labels. */
-  targetName: string;
   choice: Choice;
   decided: boolean;
   search: SearchState | undefined;
@@ -185,7 +182,7 @@ export function MappingFocus({
           <div className="muted small">
             {aliased ? <>7TV name: {source.emote.defaultName} · </> : null}
             {source.flags.zeroWidth ? "zero-width · " : ""}
-            {mapped ? `already in ${targetName} · ` : ""}
+            {mapped ? "already added · " : ""}
             {position}
             {decided ? " · picked" : ""}
           </div>
@@ -248,9 +245,9 @@ export function MappingFocus({
           <b>Failed:</b> {apply.message}
         </div>
       )}
-      {apply?.state === "added" && <div className="ok small">✓ Added to {targetName}</div>}
-      {apply?.state === "updated" && <div className="ok small">✓ Swapped in {targetName}</div>}
-      {apply?.state === "removed" && <div className="ok small">✓ Removed from {targetName}</div>}
+      {apply?.state === "added" && <div className="ok small">✓ Added</div>}
+      {apply?.state === "updated" && <div className="ok small">✓ Swapped</div>}
+      {apply?.state === "removed" && <div className="ok small">✓ Removed</div>}
 
       <div className={`tiles-area${loading ? " loading" : ""}`}>
         {loading && (
@@ -293,7 +290,7 @@ export function MappingFocus({
             onSelect={() => onChoose({ kind: "replace", emote: e }, true)}
             isDisabled={loading}
             hotkey={i < 9 ? String(i + 1) : undefined}
-            note={e.inTarget.length ? `in ${targetName} as ${e.inTarget.join(", ")}` : undefined}
+            note={e.inTarget.length ? `in your seasonal set as ${e.inTarget.join(", ")}` : undefined}
           />
         ))}
       </div>
@@ -362,7 +359,7 @@ export function MappingFocus({
             isSelected={choice.kind === "remove"}
             onChange={() => onChoose({ kind: "remove" }, true)}
           >
-            Remove from {targetName} <kbd aria-hidden>X</kbd>
+            Remove from seasonal set <kbd aria-hidden>X</kbd>
           </ToggleButton>
         ) : (
           <ToggleButton

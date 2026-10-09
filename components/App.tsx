@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Input, Label, ProgressBar, TextField } from "react-aria-components";
+import { Button, Input, Label, ProgressBar, Tab, TabList, TabPanel, Tabs, TextField } from "react-aria-components";
 import { useDialog } from "@/components/Dialog";
 import { ExtraFocus } from "@/components/ExtraFocus";
 import { MappingFocus } from "@/components/MappingFocus";
@@ -42,7 +42,7 @@ import {
   parseEmoteId,
   usedSlots,
 } from "@/lib/seventv";
-import { type Step, buildSteps, stepAlias, stepRow } from "@/lib/steps";
+import { type Section, type Step, buildSteps, stepAlias, stepRow, stepSection } from "@/lib/steps";
 import { useServices } from "@/lib/services";
 type Filter = "all" | "undecided" | "replace" | "original" | "exclude" | "changed" | "remove" | "errors";
 
@@ -229,6 +229,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     setTargetEntries({});
     removedRef.current = {};
     setRemovedState({});
+    lastInSection.current = {};
     setChoices({});
     setIndex(0);
   }, []);
@@ -342,22 +343,21 @@ export function App({ children }: { children?: React.ReactNode }) {
         const restored = saved?.choices ?? {};
         // Resume where the user was. Names are looked up rather than positions, because emotes move between
         // sections as they get added (e.g. a pending emote added before the reload is now "mapped").
-        const summaryAt = steps.findIndex((st) => st.kind === "summary");
-        const endAt = steps.findIndex((st) => st.kind === "end");
+        const doneAt = (section: Section) => steps.findIndex((st) => st.kind === "done" && st.section === section);
+        const savedDone = saved?.atDone ?? (saved?.atStep === "summary" ? "pending" : undefined);
         const aliasAt = saved?.currentAlias ? steps.findIndex((st) => stepAlias(st) === saved.currentAlias) : -1;
         const firstUndecided = s.pending.findIndex((r) => !restored[r.alias]);
         const step =
           saved?.atStep === "end"
-            ? endAt >= 0
-              ? endAt
-              : summaryAt
-            : saved?.atStep === "summary"
-              ? summaryAt
+            ? steps.length - 1 // the last step is always a done step
+            : savedDone && doneAt(savedDone) >= 0
+              ? doneAt(savedDone)
               : aliasAt >= 0
                 ? aliasAt
                 : firstUndecided >= 0
                   ? firstUndecided
-                  : summaryAt;
+                  : // Every emote to add is decided: their done step. With none to add, the next section's start.
+                    Math.max(0, doneAt("pending"));
         // Swap journal: an entry whose name is back in the target finished (or rolled back) before the page
         // closed. One whose name is still missing was interrupted between remove and re-add; keep it so the
         // user can restore the previous emote.
@@ -406,11 +406,13 @@ export function App({ children }: { children?: React.ReactNode }) {
   const steps = useMemo(() => session?.steps ?? [], [session]);
   const stepCount = steps.length;
   const step = steps[index] as Step | undefined;
-  const summaryStep = steps.findIndex((st) => st.kind === "summary");
+  const pendingDoneStep = steps.findIndex((st) => st.kind === "done" && st.section === "pending");
   const stepOfAlias = useCallback((alias: string) => steps.findIndex((st) => stepAlias(st) === alias), [steps]);
   const rowAtStep = useCallback((i: number) => stepRow(steps[i]), [steps]);
-  const atSummary = step?.kind === "summary";
-  const atEnd = step?.kind === "end";
+  const doneStep = step?.kind === "done" ? step : undefined;
+  const section = step ? stepSection(step) : "pending";
+  /** Sections with emotes in them, in order (each is a tab). */
+  const sections = useMemo(() => [...new Set(steps.map(stepSection))], [steps]);
   /** The source emote on screen (sections 1 and 2). */
   const current = stepRow(step);
   /** The target-only emote on screen (section 3). */
@@ -426,10 +428,10 @@ export function App({ children }: { children?: React.ReactNode }) {
         ...s.params,
         choices,
         currentAlias: stepAlias(step),
-        atStep: atSummary ? "summary" : atEnd ? "end" : undefined,
+        atDone: step?.kind === "done" ? step.section : undefined,
         removed: removedRef.current,
       }),
-    [choices, step, atSummary, atEnd, storage],
+    [choices, step, storage],
   );
   useEffect(() => {
     if (session) persist(session);
@@ -588,11 +590,15 @@ export function App({ children }: { children?: React.ReactNode }) {
     const open = (r: SetEmote) => !choices[r.alias] && applyStates[r.alias]?.state !== "added";
     const i = pending.findIndex((r, j) => j > index && open(r));
     const k = i >= 0 ? i : pending.findIndex(open);
-    setIndex(k >= 0 ? k : summaryStep);
+    setIndex(k >= 0 ? k : pendingDoneStep);
   };
-  /** Jump to the first step of a section (from the "All done!" buttons). */
-  const jumpTo = (kind: "mapped" | "extra") => {
-    const i = steps.findIndex((st) => st.kind === kind);
+  /** Where the user last was in each section, so switching tabs returns there. */
+  const lastInSection = useRef<Partial<Record<Section, number>>>({});
+  useEffect(() => {
+    if (step) lastInSection.current[stepSection(step)] = index;
+  }, [step, index]);
+  const goToSection = (to: Section) => {
+    const i = lastInSection.current[to] ?? steps.findIndex((st) => stepSection(st) === to);
     if (i >= 0) setIndex(i);
   };
 
@@ -960,10 +966,20 @@ export function App({ children }: { children?: React.ReactNode }) {
       const row = st.kind === "extra" ? st.entry : stepRow(st)!;
       return matchesFilter(row) ? [{ row, index }] : [];
     });
+  const sectionTitle: Record<Section, string> = {
+    pending: "New",
+    mapped: "Already added",
+    extra: "Not in base",
+  };
+  const sectionSize: Record<Section, number> = {
+    pending: pending.length,
+    mapped: session?.mapped.length ?? 0,
+    extra: extras.length,
+  };
   const overviewSections = [
-    { title: `New to ${targetName}`, rows: sectionRows("pending") },
-    { title: `Already in ${targetName}`, rows: sectionRows("mapped") },
-    { title: `Only in ${targetName}`, rows: sectionRows("extra"), extra: true },
+    { title: sectionTitle.pending, rows: sectionRows("pending") },
+    { title: sectionTitle.mapped, rows: sectionRows("mapped") },
+    { title: sectionTitle.extra, rows: sectionRows("extra"), extra: true },
   ];
 
   const themeItems = Object.entries(THEMES).map(([id, t]) => ({ id, label: t.label }));
@@ -985,12 +1001,64 @@ export function App({ children }: { children?: React.ReactNode }) {
     changeCount === 0
       ? "Finish"
       : changeCount === plan.length
-        ? `Add ${plural(plan.length, "emote")} to ${targetName}`
-        : `Save ${plural(changeCount, "change")} to ${targetName}`;
+        ? `Add ${plural(plan.length, "emote")}`
+        : `Save ${plural(changeCount, "change")}`;
   // Mid-save the journal holds the swap in flight, which isn't an interruption.
   const interrupted = applying ? [] : Object.keys(removed);
   /** Finished (or failed) changes from the latest save; ones skipped by Stop never leave "queued". */
   const runDone = run?.filter((a) => !["queued", "running"].includes(applyStates[a]?.state ?? "queued")).length ?? 0;
+
+  /** The card for the current step. */
+  const card = !session ? null : doneStep ? (
+    <MappingSummary
+      key={`done:${doneStep.section}`}
+      section={doneStep.section}
+      next={doneStep.next}
+      multiSection={sections.length > 1}
+      canPrev={index > 0}
+      counts={stats}
+      swapCount={swaps.length}
+      removeCount={removals.length}
+      sectionTitle={sectionTitle}
+      canApply={!applying && !preparing}
+      applyLabel={preparing ? "Checking your seasonal set…" : applyLabel}
+      onApply={apply}
+      onReviewUndecided={jumpToNextUndecided}
+      onNextSection={goToSection}
+      onNavigate={navigate}
+    />
+  ) : current ? (
+    <MappingFocus
+      key={`${session.source.id}:${current.alias}`}
+      source={current}
+      position={step && "n" in step ? `${step.n} of ${step.of}` : ""}
+      canPrev={index > 0}
+      canNext={index < stepCount - 1}
+      inTarget={targetEntries[current.alias]}
+      previous={removed[current.alias]}
+      tags={session.tags}
+      choice={choiceOf(current.alias)}
+      decided={!!choices[current.alias] && !isMapped(current.alias)}
+      search={searches[current.alias]}
+      apply={applyStates[current.alias]}
+      defaultSort={session.params.sortBy}
+      onChoose={choose}
+      onSearch={(opts) => void runSearch(current, opts)}
+      onNavigate={navigate}
+    />
+  ) : currentExtra && step?.kind === "extra" ? (
+    <ExtraFocus
+      key={`extra:${currentExtra.alias}`}
+      entry={currentExtra}
+      position={`${step.n} of ${step.of}`}
+      canPrev={index > 0}
+      canNext={index < stepCount - 1}
+      choice={choiceOf(currentExtra.alias)}
+      apply={applyStates[currentExtra.alias]}
+      onChoose={choose}
+      onNavigate={navigate}
+    />
+  ) : null;
 
   const header = (
     <header className="top">
@@ -1086,7 +1154,7 @@ export function App({ children }: { children?: React.ReactNode }) {
                 </span>
                 {session.mapped.length > 0 && (
                   <span className="muted">
-                    {session.mapped.length} already in {targetName}
+                    {session.mapped.length} already added
                     {(() => {
                       const removing = session.mapped.filter((r) => choices[r.alias]?.kind === "remove").length;
                       const parts = [swaps.length && `swapping ${swaps.length}`, removing && `removing ${removing}`];
@@ -1096,7 +1164,7 @@ export function App({ children }: { children?: React.ReactNode }) {
                 )}
                 {extras.length > 0 && (
                   <span className="muted">
-                    {extras.length} only in {targetName}
+                    {extras.length} not in base
                     {(() => {
                       const removing = extras.filter((e) => choices[e.alias]?.kind === "remove").length;
                       return removing ? ` (removing ${removing})` : "";
@@ -1124,7 +1192,7 @@ export function App({ children }: { children?: React.ReactNode }) {
                 <Button className="btn primary" onPress={apply} isDisabled={preparing}>
                   {preparing ? (
                     <>
-                      <Spinner label={`Checking ${targetName}`} size="sm" /> Checking {targetName}…
+                      <Spinner label="Checking your seasonal set" size="sm" /> Checking your seasonal set…
                     </>
                   ) : (
                     applyLabel
@@ -1158,7 +1226,7 @@ export function App({ children }: { children?: React.ReactNode }) {
               <div className="alert small" role="alert">
                 The page closed partway through {interrupted.length === 1 ? "a swap" : `${interrupted.length} swaps`} (
                 {interrupted.join(", ")}): the old emote came out but the new one didn&apos;t go in yet. Save again to
-                finish, or pick the <i>previously in {targetName}</i> emote to put it back.
+                finish, or pick the <i>previous</i> emote to put it back.
               </div>
             )}
             {pause && (
@@ -1187,60 +1255,25 @@ export function App({ children }: { children?: React.ReactNode }) {
             )}
           </section>
 
-          {atSummary || atEnd ? (
-            <MappingSummary
-              key={atEnd ? "end" : "summary"}
-              variant={atEnd ? "end" : "summary"}
-              canPrev={index > 0}
-              counts={stats}
-              swapCount={swaps.length}
-              removeCount={removals.length}
-              mappedCount={session.mapped.length}
-              extraCount={extras.length}
-              sourceName={session.source.name}
-              targetName={session.target.name}
-              onJump={jumpTo}
-              canApply={!applying && !preparing}
-              applyLabel={preparing ? `Checking ${targetName}…` : applyLabel}
-              onApply={apply}
-              onReviewUndecided={jumpToNextUndecided}
-              onNavigate={navigate}
-            />
-          ) : current ? (
-            <MappingFocus
-              key={`${session.source.id}:${current.alias}`}
-              source={current}
-              position={step && "n" in step ? `${step.n} of ${step.of}` : ""}
-              canPrev={index > 0}
-              canNext={index < stepCount - 1}
-              inTarget={targetEntries[current.alias]}
-              previous={removed[current.alias]}
-              tags={session.tags}
-              targetName={session.target.name}
-              choice={choiceOf(current.alias)}
-              decided={!!choices[current.alias] && !isMapped(current.alias)}
-              search={searches[current.alias]}
-              apply={applyStates[current.alias]}
-              defaultSort={session.params.sortBy}
-              onChoose={choose}
-              onSearch={(opts) => void runSearch(current, opts)}
-              onNavigate={navigate}
-            />
-          ) : currentExtra && step?.kind === "extra" ? (
-            <ExtraFocus
-              key={`extra:${currentExtra.alias}`}
-              entry={currentExtra}
-              position={`${step.n} of ${step.of}`}
-              canPrev={index > 0}
-              canNext={index < stepCount - 1}
-              sourceName={session.source.name}
-              targetName={session.target.name}
-              choice={choiceOf(currentExtra.alias)}
-              apply={applyStates[currentExtra.alias]}
-              onChoose={choose}
-              onNavigate={navigate}
-            />
-          ) : null}
+          {sections.length > 1 ? (
+            // One tab per section with emotes in it; a single section needs no tabs.
+            <Tabs
+              className="section-tabs"
+              selectedKey={section}
+              onSelectionChange={(key) => goToSection(key as Section)}
+            >
+              <TabList className="section-tab-list" aria-label="Sections">
+                {sections.map((sec) => (
+                  <Tab key={sec} id={sec} className="section-tab">
+                    {sectionTitle[sec]} <span className="section-tab-count">{sectionSize[sec]}</span>
+                  </Tab>
+                ))}
+              </TabList>
+              <TabPanel id={section}>{card}</TabPanel>
+            </Tabs>
+          ) : (
+            card
+          )}
 
           {rows.length + extras.length > 0 && (
             <section className="card" aria-label="All emotes">
