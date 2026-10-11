@@ -203,6 +203,8 @@ export function MappingFocus({
   // so the header stays "base → new".
   const replacing = o.kind === "swap" ? o.current : undefined;
   const keepsCurrent = o.kind === "keep";
+  // Each tile's position in the grid (pinned tiles first, then results), so the loading pulse ripples across all.
+  let tileIndex = 0;
 
   return (
     <section className="card focus" aria-label={`Picking for ${source.alias}`}>
@@ -336,6 +338,7 @@ export function MappingFocus({
               onSelect={() => onChoose({ kind: "replace", emote: previous.emote }, true)}
               badge="previous"
               note="taken out by an unfinished swap"
+              index={tileIndex++}
             />
           )}
           {/* Base before current, in the same order as the header's "base → current". */}
@@ -347,6 +350,7 @@ export function MappingFocus({
               badge="base"
               zeroWidth={source.flags.zeroWidth}
               hotkey={mapped ? undefined : "0"}
+              index={tileIndex++}
             />
           )}
           {mapped && current && (
@@ -357,10 +361,17 @@ export function MappingFocus({
               badge={current.deleted ? "current (deleted)" : "current"}
               zeroWidth={inTarget?.flags.zeroWidth}
               hotkey="0"
+              index={tileIndex++}
             />
           )}
           {chosen && chosenMissing && (
-            <Tile emote={chosen} selected onSelect={() => onChoose(choice, true)} badge="chosen" />
+            <Tile
+              emote={chosen}
+              selected
+              onSelect={() => onChoose(choice, true)}
+              badge="chosen"
+              index={tileIndex++}
+            />
           )}
           {items.map((e, i) => (
             <Tile
@@ -370,7 +381,7 @@ export function MappingFocus({
               onSelect={() => onChoose({ kind: "replace", emote: e }, true)}
               isDisabled={loading}
               hotkey={i < 9 ? String(i + 1) : undefined}
-              index={i}
+              index={tileIndex++}
               note={
                 e.inTarget.length ? `in your seasonal set as ${e.inTarget.join(", ")}` : undefined
               }
