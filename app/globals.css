@@ -1,5 +1,26 @@
 /* ---------- Palettes (switched by <html data-theme>) ---------- */
+/* Neutral is the default: it applies unless a seasonal palette below overrides it (same specificity, later wins),
+   so a missing or unknown data-theme still gets a palette. */
 :root,
+[data-theme="neutral"] {
+  --bg: #0f0f13;
+  --bg-glow-1: rgba(167, 139, 250, 0.12);
+  --bg-glow-2: rgba(56, 189, 248, 0.08);
+  --panel: #18181e;
+  --panel-2: #22222a;
+  --border: #31313b;
+  --text: #ececf1;
+  --muted: #9a9aa8;
+  --accent: #a78bfa;
+  --accent-hover: #c0aafc;
+  --accent-text: #150b2e;
+  --accent-soft: rgba(167, 139, 250, 0.14);
+  --accent-2: #38bdf8;
+  --ok: #4ade80;
+  --err: #f87171;
+  --sprinkle: none;
+}
+
 [data-theme="halloween"] {
   --bg: #110b16;
   --bg-glow-1: rgba(255, 122, 26, 0.16);
@@ -41,25 +62,6 @@
     radial-gradient(1px 1px at 5.625rem 5rem, rgba(255, 255, 255, 0.45), transparent 60%),
     radial-gradient(2px 2px at 9.375rem 8.75rem, rgba(255, 255, 255, 0.35), transparent 60%),
     radial-gradient(1px 1px at 3.75rem 10.625rem, rgba(255, 255, 255, 0.5), transparent 60%);
-}
-
-[data-theme="neutral"] {
-  --bg: #0f0f13;
-  --bg-glow-1: rgba(167, 139, 250, 0.12);
-  --bg-glow-2: rgba(56, 189, 248, 0.08);
-  --panel: #18181e;
-  --panel-2: #22222a;
-  --border: #31313b;
-  --text: #ececf1;
-  --muted: #9a9aa8;
-  --accent: #a78bfa;
-  --accent-hover: #c0aafc;
-  --accent-text: #150b2e;
-  --accent-soft: rgba(167, 139, 250, 0.14);
-  --accent-2: #38bdf8;
-  --ok: #4ade80;
-  --err: #f87171;
-  --sprinkle: none;
 }
 
 /* ---------- Base ---------- */
@@ -1230,11 +1232,15 @@ img {
 .logo > span {
   display: none;
 }
-:root:not([data-theme]) .logo-halloween,
-[data-theme="halloween"] .logo-halloween,
-[data-theme="winter"] .logo-winter,
-[data-theme="neutral"] .logo-neutral {
+/* Neutral unless a seasonal palette is set, like the palettes themselves. */
+.logo > .logo-neutral,
+[data-theme="halloween"] .logo > .logo-halloween,
+[data-theme="winter"] .logo > .logo-winter {
   display: inline;
+}
+[data-theme="halloween"] .logo > .logo-neutral,
+[data-theme="winter"] .logo > .logo-neutral {
+  display: none;
 }
 
 /* ---------- Login ---------- */

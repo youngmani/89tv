@@ -34,7 +34,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="halloween" className={nunito.variable} suppressHydrationWarning>
+    <html lang="en" data-theme="neutral" className={nunito.variable} suppressHydrationWarning>
       <head>
         {/* Pick the palette before first paint (no flash): the in-progress mapping's theme if there is one
             (not on /demo, which doesn't use saved data and would otherwise flash), otherwise the season. Keep
