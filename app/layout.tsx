@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Nunito } from "next/font/google";
 import { Footer } from "@/components/Footer";
 import { Providers } from "@/components/Providers";
+import { SITE_URL } from "@/lib/site";
 import "./preflight.css";
 import "./globals.css";
 
@@ -11,9 +12,25 @@ const nunito = Nunito({ subsets: ["latin"], variable: "--font-nunito" });
 // Tells the browser the page is dark before any CSS loads (its default background, form controls, scrollbars).
 export const viewport: Viewport = { colorScheme: "dark" };
 
+const description =
+  "Make Halloween and Christmas versions of your 7TV emote set: pick a seasonal version of each emote and copy them all into another set.";
+
+// Social previews (Open Graph, X/Twitter) use app/opengraph-image.png; Next adds its tags and absolute URL.
 export const metadata: Metadata = {
-  title: "89TV",
-  description: "Build Halloween and Christmas versions of a 7TV emote set.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: "89TV", template: "%s · 89TV" },
+  description,
+  applicationName: "89TV",
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "89TV",
+    title: "89TV",
+    description,
+    url: "/",
+    locale: "en_US",
+  },
+  twitter: { card: "summary_large_image", title: "89TV", description },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
