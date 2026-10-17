@@ -13,7 +13,7 @@ const nunito = Nunito({ subsets: ["latin"], variable: "--font-nunito" });
 export const viewport: Viewport = { colorScheme: "dark" };
 
 const description =
-  "Make Halloween and Christmas versions of your 7TV emote set: pick a seasonal version of each emote and copy them all into another set.";
+  "Easily generate Halloween and Christmas themed 7TV emote sets.";
 
 // Social previews (Open Graph, X/Twitter) use app/opengraph-image.png; Next adds its tags and absolute URL.
 export const metadata: Metadata = {
