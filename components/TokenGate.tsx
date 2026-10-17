@@ -103,9 +103,7 @@ export function TokenGate({
     const t = cleanToken(raw);
     if (!looksLikeToken(t)) {
       // Deliberately vague: never repeat clipboard contents back.
-      setProblem(
-        "That doesn't look like a 7TV token. Run the command on 7tv.app again, then try once more.",
-      );
+      setProblem("Invalid 7TV token. Run the command on 7tv.app again, then try again.");
       return;
     }
     setProblem(null);
@@ -118,9 +116,7 @@ export function TokenGate({
       submit(await navigator.clipboard.readText());
     } catch {
       setManual(true);
-      setProblem(
-        "Your browser didn't let us read the clipboard. Paste the token into the box instead; it stays hidden.",
-      );
+      setProblem("Unable to access the clipboard. Paste the token below.");
     }
   };
 

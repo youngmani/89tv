@@ -1,6 +1,10 @@
 /** "1 emote", "3 emotes". */
 export const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
+/** "a", "a and b", "a, b and c". */
+export const listOf = (items: string[]) =>
+  items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items.at(-1)}` : (items[0] ?? "");
+
 /** Waits `ms`, or rejects as soon as `signal` aborts. */
 export const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((resolve, reject) => {

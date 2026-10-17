@@ -336,7 +336,7 @@ export function MappingFocus({
               selected={chosen?.id === previous.emote.id}
               onSelect={() => onChoose({ kind: "replace", emote: previous.emote }, true)}
               badge="previous"
-              note="taken out by an unfinished swap"
+              note="removed by an interrupted save"
               index={tileIndex++}
             />
           )}
@@ -404,17 +404,15 @@ export function MappingFocus({
         ) : (
           <>
             {search.via === "link" ? (
-              items.length ? (
-                "Found the emote from that link"
-              ) : search.hidden ? (
-                "That emote can't be added: it's deleted, or private (only its owner can add it, to their own sets)"
+              !items.length && search.hidden ? (
+                "The linked emote is private."
               ) : (
-                "That link is the emote that's already here"
+                "Linked emote"
               )
             ) : (
               <>
                 {search.via === "link-missing" &&
-                  "No emote with that ID, so this is a regular search: "}
+                  "No emote with that ID. Showing search results instead: "}
                 {search.total} result{search.total === 1 ? "" : "s"} for “{search.query}”
               </>
             )}

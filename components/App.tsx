@@ -66,7 +66,7 @@ import {
 } from "@/lib/seventv";
 import { type Section, type Step, buildSteps, stepAlias, stepRow, stepSection } from "@/lib/steps";
 import { useServices } from "@/lib/services";
-import { plural, preloadImage, sleep } from "@/lib/util";
+import { listOf, plural, preloadImage, sleep } from "@/lib/util";
 
 type Filter = "all" | "replace" | "original" | "exclude" | "changed" | "remove" | "errors";
 
@@ -501,7 +501,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         if (!source) throw new Error("Your base set no longer exists.");
         if (!target) throw new Error("Your seasonal set no longer exists.");
         if (!user.editableEmoteSetIds.includes(target.id))
-          throw new Error("You can't edit that seasonal set.");
+          throw new Error("You don't have permission to edit this emote set.");
         // An emote counts as already mapped when the target has something under the same name (alias).
         const entries = new Map(targetEmotes.map((e) => [e.alias, e]));
         const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).toSorted(byAlias);
@@ -589,7 +589,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       if (superseded()) return;
       if (!user)
         return signOut(
-          "7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in.",
+          "Token rejected by 7TV. Run the command on 7tv.app again, then press Paste and log in.",
         );
       storage.token.set(t);
       if (clearClipboardAfterLogin.current) {
@@ -613,8 +613,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       if (e instanceof ApiError && e.status === 401)
         return signOut(
           clearClipboardAfterLogin.current
-            ? "7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in."
-            : "Your 7TV session has expired. Log in again to keep going.",
+            ? "Token rejected by 7TV. Run the command on 7tv.app again, then press Paste and log in."
+            : "Your 7TV session has expired. Log in again to continue.",
         );
       setAuthError(friendlyError(e));
       setAccount("error");
@@ -716,7 +716,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   const cancelMapping = async () => {
     const ok = await ask({
       title: "Start over?",
-      body: "Your picks will be thrown away. Anything already saved to your seasonal set stays there.",
+      body: "Unsaved changes will be discarded.",
       confirmLabel: "Start over",
       destructive: true,
     });
@@ -971,7 +971,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           next[r.alias] = {
             state: "error",
             message:
-              "Someone changed this one on 7TV after you loaded it, so it was left alone. Reload to see what's there now.",
+              "This emote changed on 7TV after you loaded it, so it wasn't saved. Reload to see the latest.",
           };
         return next;
       });
@@ -980,7 +980,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         if (stale.length) {
           await saveStep({
             title: "Nothing was saved",
-            body: `${plural(stale.length, "emote")} you changed were edited on 7TV in the meantime, so they were left alone. Reload to see the latest.`,
+            body: `${plural(stale.length, "emote")} ${stale.length === 1 ? "was" : "were"} changed on 7TV after you loaded ${stale.length === 1 ? "it" : "them"}. Reload to see the latest, then try again.`,
           });
           return;
         }
@@ -996,19 +996,9 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       if (slotsNeeded > free) {
         await saveStep({
           title: `${s.target.name} is too full`,
-          body: (
-            <>
-              <p>
-                It has {plural(free, "free slot")} ({used} of {freshCapacity} used), but{" "}
-                {plural(slotsNeeded, "emote")} still need one
-                {freed ? `, even counting the ${plural(freed, "emote")} you're removing` : ""}.
-              </p>
-              <p>
-                Skip at least {slotsNeeded - free} more, or raise the set&apos;s capacity on
-                7tv.app.
-              </p>
-            </>
-          ),
+          body: `This save requires ${plural(slotsNeeded, "open slot")}, but there ${
+            free === 1 ? "is only 1 slot" : free === 0 ? "are no slots" : `are only ${free} slots`
+          } remaining. Remove at least ${plural(slotsNeeded - free, "more emote")}, or raise the set's capacity on 7tv.app.`,
         });
         return;
       }
@@ -1157,8 +1147,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
             setTargetEntry(row.alias, null);
           }
           const suffix = restored
-            ? ` The old one (${cur.emote.defaultName}) was put back.`
-            : ` The old one (${cur.emote.defaultName}) couldn't be put back either. Save again to retry, or pick the previous emote to put it back.`;
+            ? ` The previous emote (${cur.emote.defaultName}) was restored.`
+            : ` The previous emote (${cur.emote.defaultName}) could not be restored. Save again to retry.`;
           if (fail(row, e, suffix)) break;
         }
         await sleep(gap);
@@ -1183,22 +1173,22 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       if (full) {
         await saveStep({
           title: `${s.target.name} is full`,
-          body: `7TV turned down a change because ${s.target.name} hit its capacity (${done} before that). Free up some space or skip a few more emotes, then save again.`,
+          body: `${s.target.name} ran out of room after ${done}. Remove some emotes from it, then save again.`,
         });
       } else if (fatal) {
         await saveStep({
           title: "Stopped early",
           body: (
             <>
-              <ErrorText message={fatal} /> ({done} before that.) Your picks are saved, so you can
-              carry on once it&apos;s sorted.
+              <ErrorText message={fatal} /> {done} before the save stopped. Your selections are
+              saved. Resolve the issue, then save again.
             </>
           ),
         });
       } else if (failed || stale.length) {
         await saveStep({
           title: `${plural(failed + stale.length, "emote")} failed`,
-          body: `${done}. The rest are listed at the top with the reason. Fix them and save again.`,
+          body: `${done}. Failed emotes are listed at the top with the reason for each. Resolve them, then save again.`,
         });
       } else {
         await finish(s, added, swapped, removedN);
@@ -1219,14 +1209,10 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       swapped && `swapped ${swapped}`,
       removedN && `removed ${removedN}`,
     ].filter(Boolean) as string[];
-    const summary = parts.length
-      ? `${parts.slice(0, -1).join(", ")}${parts.length > 1 ? " and " : ""}${parts.at(-1)}`
-      : "";
+    const summary = listOf(parts);
     await saveStep({
       title: `${s.target.name} is up to date`,
-      body: summary
-        ? `${summary[0].toUpperCase()}${summary.slice(1)}.`
-        : "Nothing needed changing.",
+      body: summary ? `${summary[0].toUpperCase()}${summary.slice(1)}.` : "No changes were needed.",
       okLabel: "Done",
       dismissable: false,
     });
@@ -1347,7 +1333,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       <div className="summary-emoji" aria-hidden>
         🔍
       </div>
-      <h2>Nothing here</h2>
+      <h2>No matching emotes</h2>
       <p className="muted">
         No emotes in “{filterItems.find((f) => f.id === filter)?.label.replace(/ \(\d+\)$/, "")}”.
       </p>
@@ -1468,7 +1454,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
               {timeLeft && <p className="muted small time-left">{timeLeft}</p>}
               {pause && pause.bucket !== "search" && (
                 <p className="notice small">
-                  7TV asked us to slow down. Carrying on in {pause.seconds}s.
+                  Rate limit exceeded. Trying again in {pause.seconds}s.
                 </p>
               )}
             </>
@@ -1479,10 +1465,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         {header}
         {me && clipboardWarning && (
           <div className="card narrow notice-card" role="alert">
-            <span>
-              Your browser didn&apos;t let us clear your clipboard, so your token may still be on
-              it. Copy something else to overwrite it.
-            </span>
+            <span>Unable to clear the clipboard. Copy something else to overwrite the token.</span>
             <Button className="link-button" onPress={() => setClipboardWarning(false)}>
               Dismiss
             </Button>
@@ -1598,17 +1581,16 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
               )}
               {interrupted.length > 0 && (
                 <div className="alert small" role="alert">
-                  {interrupted.length === 1 ? "A swap" : `${interrupted.length} swaps`} didn&apos;t
-                  finish ({interrupted.join(", ")}): the old emote came out but the new one
-                  didn&apos;t go in yet. Save again to finish, or pick the <i>previous</i> emote to
-                  put it back.
+                  A save was interrupted, so {listOf(interrupted)}{" "}
+                  {interrupted.length === 1 ? "is" : "are"} missing from your seasonal set. Save
+                  again to fix {interrupted.length === 1 ? "it" : "them"}.
                 </div>
               )}
               {pause && (
                 <div className="notice small" role="status">
                   {pause.bucket === "search"
-                    ? `You've hit 7TV's search limit. Searching again in ${pause.seconds}s.`
-                    : `7TV asked us to slow down. Carrying on in ${pause.seconds}s.`}
+                    ? `Search rate limit exceeded. Trying again in ${pause.seconds}s.`
+                    : `Rate limit exceeded. Trying again in ${pause.seconds}s.`}
                 </div>
               )}
             </section>
@@ -1697,7 +1679,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           <section className="card narrow center stack">
             {loadError ? (
               <>
-                <p>Couldn&apos;t pick up where you left off.</p>
+                <p>Couldn&apos;t restore your previous session.</p>
                 <p className="error">
                   <ErrorText message={loadError} />
                 </p>
@@ -1712,8 +1694,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
               </>
             ) : (
               <div className="loading-card">
-                <Spinner label="Picking up where you left off" />
-                <p className="muted">Picking up where you left off…</p>
+                <Spinner label="Restoring your previous session" />
+                <p className="muted">Restoring your previous session…</p>
               </div>
             )}
           </section>
@@ -1783,9 +1765,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                 )}
               </Button>
               {sourceId && sourceId === targetId && (
-                <span className="error small">
-                  Your base and seasonal sets need to be different.
-                </span>
+                <span className="error small">The base and seasonal sets must be different.</span>
               )}
               {theme === "custom" && !tags.length && (
                 <span className="muted small">Add at least one tag.</span>

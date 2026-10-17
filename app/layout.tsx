@@ -12,8 +12,7 @@ const nunito = Nunito({ subsets: ["latin"], variable: "--font-nunito" });
 // Tells the browser the page is dark before any CSS loads (its default background, form controls, scrollbars).
 export const viewport: Viewport = { colorScheme: "dark" };
 
-const description =
-  "Easily generate Halloween and Christmas themed 7TV emote sets.";
+const description = "Make Halloween and Christmas versions of your 7TV emote set.";
 
 // Social previews (Open Graph, X/Twitter) use app/opengraph-image.png; Next adds its tags and absolute URL.
 export const metadata: Metadata = {

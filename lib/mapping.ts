@@ -96,7 +96,7 @@ export function outcome(row: SetEmote, choice: Choice, current: SetEmote | undef
 export const THEMES = {
   halloween: { label: "🎃 Halloween", tags: ["halloween"], palette: "halloween" },
   christmas: { label: "🎄 Christmas", tags: ["christmas", "xmas"], palette: "winter" },
-  custom: { label: "✨ Something else", tags: [] as string[], palette: "neutral" },
+  custom: { label: "✨ Custom", tags: [] as string[], palette: "neutral" },
 } as const;
 export type Theme = keyof typeof THEMES;
 

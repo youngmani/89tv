@@ -432,17 +432,14 @@ export function friendlyError(e: unknown): string {
   const code = e instanceof ApiError ? e.code : undefined;
   if (isCapacityError(e)) return "Your seasonal set is full.";
   if (isConflictError(e)) return "Your seasonal set already has an emote with this name.";
-  if (/emote is private/i.test(msg))
-    return "This emote is private, and only its owner can add it to their own sets. Pick a different one.";
-  if (/emote not found/i.test(msg))
-    return "This emote has been deleted from 7TV. Pick a different one.";
+  if (/emote is private/i.test(msg)) return "This emote is private.";
+  if (/emote not found/i.test(msg)) return "This emote has been deleted from 7TV.";
   if (/emote set not found/i.test(msg)) return "Your seasonal set no longer exists.";
   if (code === "UNAUTHORIZED" || code === "LOGIN_REQUIRED")
-    return "Your 7TV session expired. Log in again to keep going.";
+    return "Your 7TV session has expired. Log in again to continue.";
   if (code === "LACKING_PRIVILEGES" || (e instanceof ApiError && e.status === 403))
-    return "You can't edit your seasonal set anymore.";
-  if (code === "RATE_LIMIT_EXCEEDED")
-    return "7TV asked us to slow down. Wait a moment and try again.";
+    return "You no longer have permission to edit this emote set.";
+  if (code === "RATE_LIMIT_EXCEEDED") return "Rate limit exceeded. Try again in a minute.";
   if (e instanceof TypeError) return "Couldn't reach 7TV. Check your connection and try again.";
   return msg.replace(/^[A-Z_]+ /, ""); // strip the "CODE " prefix 7TV puts on messages
 }
