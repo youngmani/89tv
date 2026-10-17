@@ -1597,7 +1597,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
 
             {/* The list of every emote sits beside the card (a drawer on narrow screens) and drives it: picking a
                 row shows that emote, and the filter decides which emotes the arrows step through. */}
-            <div className="workspace">
+            <div className={`workspace${rows.length + extras.length > 0 ? "" : " empty"}`}>
               {rows.length + extras.length > 0 && (
                 <aside className="card emote-list" aria-label="All emotes">
                   {/* The box matches the card's height; its contents stay on screen as a tall card scrolls. */}
