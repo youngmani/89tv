@@ -1705,7 +1705,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           <section className="card setup" aria-label="Choose your sets">
             <SetPicker
               label="Base set"
-              description="Your regular emote set"
+              description="Read-only source"
               sets={sets}
               value={sourceId}
               onChange={(id) => {
@@ -1716,8 +1716,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
               linkError={sourceLinkError}
             />
             <SetPicker
-              label="Target set"
-              description="Where to add the seasonal emotes"
+              label="Seasonal set"
+              description="Changes are saved here"
               sets={sets}
               value={targetId}
               onChange={setTargetId}
@@ -1773,8 +1773,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
               {loadError && <span className="error small">{loadError}</span>}
               {sets.length === 0 && (
                 <span className="muted small">
-                  You can&apos;t edit any emote sets yet. Create your seasonal set on 7tv.app, then
-                  reload.
+                  You can&apos;t edit any emote sets yet. Create an empty seasonal set on 7tv.app,
+                  then reload.
                 </span>
               )}
             </div>
