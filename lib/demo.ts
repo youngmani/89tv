@@ -23,12 +23,18 @@ interface DemoSetSeed {
 }
 
 const OWNER = "youngmani";
+/** The demo account's user ID; it owns every demo set. */
+const OWNER_ID = "DEMO";
 export const DEMO_BASE_ID = "DEMOBASE000000000000000000";
 /** Fake set IDs for the seasonal sets, in seed order. */
 const demoSeasonalId = (i: number) => `DEMOSEASONAL${String(i).padStart(14, "0")}`;
 
-/** A little latency so saving looks like saving. */
-const latency = () => sleep(80 + Math.random() * 120);
+/**
+ * Each fake change takes about this long (latency plus the pause after it), like a real save of a few emotes.
+ * Bigger saves get less per change, so even a whole set is done in about SAVE_BUDGET_MS.
+ */
+const CHANGE_MS = 390;
+const SAVE_BUDGET_MS = 60_000;
 
 interface DemoSet {
   id: string;
@@ -41,7 +47,8 @@ interface DemoSet {
  * In-memory stand-in for the user's two emote sets. Lives outside React: mutating it never re-renders
  * anything; the app learns about changes from its own add/remove calls, exactly as with the real API.
  * Applies the same rules (and error messages) as 7TV's addEmote/removeEmote so the app's handling runs
- * for real: name conflicts, capacity (deleted emotes don't count), private and deleted emotes.
+ * for real: name conflicts, capacity (deleted emotes don't count), deleted emotes, and private emotes (only
+ * allowed in their owner's sets).
  */
 export class DemoStore {
   private sets = new Map<string, DemoSet>();
@@ -77,6 +84,7 @@ export class DemoStore {
       id: s.id,
       name: s.name,
       capacity: s.capacity,
+      ownerId: OWNER_ID,
       owner: { mainConnection: { platformDisplayName: OWNER } },
       emotes: { totalCount: s.entries.length },
     };
@@ -93,7 +101,8 @@ export class DemoStore {
     const s = this.sets.get(setId);
     if (!s) throw new ApiError("emote set not found", "BAD_REQUEST", 404);
     if (emote.deleted) throw new ApiError("emote not found", "BAD_REQUEST", 404);
-    if (emote.flags.private) throw new ApiError("emote is private", "BAD_REQUEST", 400);
+    if (emote.flags.private && emote.ownerId !== OWNER_ID)
+      throw new ApiError("emote is private", "BAD_REQUEST", 400);
     const name = alias ?? emote.defaultName;
     const entry: SetEmote = {
       id: emote.id,
@@ -121,6 +130,9 @@ export class DemoStore {
   }
 }
 
+/** Time per change when saving `total` of them: quicker for big saves, so they fit in SAVE_BUDGET_MS. */
+const demoPerChange = (total: number) => Math.min(CHANGE_MS, SAVE_BUDGET_MS / Math.max(1, total));
+
 /**
  * Services for /demo: a fake account and fake saving backed by DemoStore, with real (anonymous) search and
  * emote lookups. Nothing is persisted, so reloading starts the demo fresh and a real in-progress mapping is
@@ -128,8 +140,12 @@ export class DemoStore {
  */
 export function createDemoServices(seed: DemoSeed = DEMO_SEED): Services {
   const store = new DemoStore(seed);
+  /** Time per change for the save in progress (set by changeDelay when a save starts). */
+  let perChange = CHANGE_MS;
+  /** A little latency so saving looks like saving: about 60% of each change's time, with some jitter. */
+  const latency = () => sleep(perChange * (0.35 + Math.random() * 0.5));
   const me: Me = {
-    id: "DEMO",
+    id: OWNER_ID,
     mainConnection: { platformDisplayName: OWNER, platformAvatarUrl: null },
     editableEmoteSetIds: store.ids(),
   };
@@ -144,7 +160,13 @@ export function createDemoServices(seed: DemoSeed = DEMO_SEED): Services {
     fetchSetInfos: async (ids) => ids.flatMap((id) => store.info(id) ?? []),
     // Demo sets come from the store; anything else (a pasted link to a real set) is read from 7TV.
     fetchSetInfo: async (id) => store.info(id) ?? liveApi.fetchSetInfo(id),
-    fetchSetEmotes: async (id) => (store.has(id) ? store.entries(id) : liveApi.fetchSetEmotes(id)),
+    fetchSetEmotes: async (id) => {
+      if (store.has(id)) return store.entries(id);
+      // A real set: remember its emotes, so copying them into a demo set doesn't need a lookup per emote.
+      const entries = await liveApi.fetchSetEmotes(id);
+      for (const e of entries) store.remember(e.emote);
+      return entries;
+    },
     searchEmotes: async (p, token, signal) => {
       const demoTarget = p.targetSetId && store.has(p.targetSetId);
       const res = await liveApi.searchEmotes(
@@ -181,5 +203,10 @@ export function createDemoServices(seed: DemoSeed = DEMO_SEED): Services {
     api,
     storage: { token: noopSlot("demo"), mapping: noopSlot() },
     initialSelection: { sourceId: DEMO_BASE_ID, targetId: demoSeasonalId(0) },
+    changeDelay: (total) => {
+      perChange = demoPerChange(total);
+      return perChange * 0.4;
+    },
+    saveTime: (total) => demoPerChange(total) * total,
   };
 }

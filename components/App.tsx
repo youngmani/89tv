@@ -1,12 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import {
   Button,
   Heading,
   Input,
   Label,
   ProgressBar,
+  Sheet,
+  SheetBackdrop,
+  SheetContent,
+  SheetOverlay,
   Tab,
   TabList,
   TabPanel,
@@ -37,6 +41,7 @@ import {
   type Theme,
   themeForDate,
   mappingParams,
+  type Outcome,
   outcome,
 } from "@/lib/mapping";
 import { createLimiter } from "@/lib/queue";
@@ -48,34 +53,34 @@ import {
   type Me,
   type SetEmote,
   type SortBy,
+  canAddTo,
   emoteImage,
+  freeSearches,
   friendlyError,
   isCapacityError,
   isEmoteLevelError,
   onRateLimitPause,
   parseEmoteId,
+  searchWait,
   usedSlots,
 } from "@/lib/seventv";
 import { type Section, type Step, buildSteps, stepAlias, stepRow, stepSection } from "@/lib/steps";
 import { useServices } from "@/lib/services";
 import { plural, preloadImage, sleep } from "@/lib/util";
 
-type Filter =
-  | "all"
-  | "undecided"
-  | "replace"
-  | "original"
-  | "exclude"
-  | "changed"
-  | "remove"
-  | "errors";
+type Filter = "all" | "replace" | "original" | "exclude" | "changed" | "remove" | "errors";
 
-// Searches are the scarce resource (7TV allows ~100 per window), so we only search the emote on screen
-// and preload the next one.
+// Searches are the scarce resource (7TV allows 100 a minute, paced in lib/seventv.ts), so we only search the
+// emote on screen and preload the next one.
 const searchLimit = createLimiter(2);
-const AUTO_SEARCH_BURST = 3;
-const AUTO_SEARCH_WINDOW_MS = 3000;
-const AUTO_SEARCH_DELAY_MS = 1000;
+/** Cards shown less than this apart count as flicking through: searching waits until the user stops this long. */
+const SETTLE_MS = 300;
+/** Saves at least this long mention how long they take. */
+const LONG_SAVE_MS = 45_000;
+/** "about a minute", "about 10 minutes". */
+const duration = (ms: number) =>
+  ms < 90_000 ? "about a minute" : `about ${Math.round(ms / 60_000)} minutes`;
+
 /** How long "Start picking" waits for the first card before showing it anyway. */
 const FIRST_CARD_BUDGET_MS = 1000;
 
@@ -111,6 +116,93 @@ const tagsFor = (theme: Theme, customTags: string) =>
         .filter(Boolean)
     : [...THEMES[theme].tags];
 
+/** The in-progress mapping as saved to storage: where the user is, their picks, and the swap journal. */
+const toRecord = (
+  s: Session,
+  choices: Record<string, Choice>,
+  step: Step | undefined,
+  removed: Record<string, RemovedEntry>,
+): MappingRecord => ({
+  ...s.params,
+  choices,
+  currentAlias: stepAlias(step),
+  atDone: step?.kind === "done" ? step.section : undefined,
+  removed,
+});
+
+const sectionTitle: Record<Section, string> = {
+  pending: "New",
+  mapped: "Already added",
+  extra: "Not in base",
+};
+
+/**
+ * For the filters, an already-added emote counts as a seasonal pick or a copy by what the target ends up with:
+ * a different emote than the base one, or the base emote itself. Removed ones are neither.
+ */
+const resultKind = (row: SetEmote, o: Outcome): "replace" | "original" | null =>
+  o.kind === "remove" || o.kind === "skip"
+    ? null
+    : o.emote.id === row.emote.id
+      ? "original"
+      : "replace";
+
+/** What the filters look at: the user's picks, what the target holds, save results, and each row's section. */
+interface FilterState {
+  choices: Record<string, Choice>;
+  targetEntries: Record<string, SetEmote>;
+  applyStates: Record<string, ApplyState>;
+  mapped: Set<string>;
+  extra: Set<string>;
+}
+
+/** Whether filter `f` shows this emote. */
+function rowMatches(row: SetEmote, f: Filter, fs: FilterState): boolean {
+  if (f === "all") return true;
+  if (f === "errors") return fs.applyStates[row.alias]?.state === "error";
+  const c = fs.choices[row.alias];
+  const cur = fs.targetEntries[row.alias];
+  const o = outcome(row, c ?? (cur ? KEEP : ORIGINAL), cur);
+  if (f === "changed") return o.kind === "swap";
+  if (f === "remove") return o.kind === "remove";
+  if (fs.mapped.has(row.alias)) return resultKind(row, o) === f;
+  if (fs.extra.has(row.alias)) return false;
+  // A new emote with no pick is copied as-is.
+  if (f === "original") return !c ? !cur : c.kind === "original";
+  return c?.kind === f;
+}
+
+/** Which steps a filter shows, worked out in one pass so every lookup during render is cheap. */
+interface Visibility {
+  /** Per step: matching emotes, and the done card of each section that has any (all of them with no filter). */
+  visible: boolean[];
+  /** Sections with at least one matching emote. */
+  matching: Set<Section>;
+  /** The first matching emote's step, or null when nothing matches. */
+  first: number | null;
+  /** Per step: its 1-based place among the visible emotes of its section (0 when hidden or a done card). */
+  rank: number[];
+  /** How many emotes each section shows. */
+  shown: Record<Section, number>;
+}
+
+function visibilityFor(steps: Step[], f: Filter, fs: FilterState): Visibility {
+  const visible = steps.map((st) => st.kind !== "done" && rowMatches(stepRow(st)!, f, fs));
+  const matching = new Set<Section>();
+  const shown: Record<Section, number> = { pending: 0, mapped: 0, extra: 0 };
+  const rank = steps.map((st, i) => {
+    if (!visible[i]) return 0;
+    const sec = stepSection(st);
+    matching.add(sec);
+    return ++shown[sec];
+  });
+  steps.forEach((st, i) => {
+    if (st.kind === "done") visible[i] = f === "all" || matching.has(st.section);
+  });
+  const first = steps.findIndex((st, i) => st.kind !== "done" && visible[i]);
+  return { visible, matching, first: first >= 0 ? first : null, rank, shown };
+}
+
 /** A step of the save modal: a message or confirmation (see DialogOptions), or the progress bar. */
 type SaveDialog =
   | (DialogOptions & { kind?: undefined })
@@ -118,11 +210,11 @@ type SaveDialog =
 
 /**
  * The whole app. API and storage come from <ServicesProvider> (live on /, faked on /demo).
- * `children` render at the end of <main>, right under the last card (e.g. /demo's exit link).
+ * `headerAction` goes where the live app shows the user and Sign out (e.g. /demo's exit link).
  */
-export function App({ children }: { children?: React.ReactNode }) {
+export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   // Stable for the page's lifetime (created once), so depending on these never re-runs effects/callbacks.
-  const { api, storage, mode, initialSelection } = useServices();
+  const { api, storage, mode, initialSelection, changeDelay, saveTime } = useServices();
   const [hydrated, setHydrated] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -136,8 +228,8 @@ export function App({ children }: { children?: React.ReactNode }) {
   const clearClipboardAfterLogin = useRef(false);
   /** Shown if wiping the clipboard was blocked by the browser. */
   const [clipboardWarning, setClipboardWarning] = useState(false);
-  /** Bumped by "Retry" to re-run the account check after a network failure. */
-  const [accountAttempt, setAccountAttempt] = useState(0);
+  /** Numbers each account check; a newer check, or signing out, makes an older one stop where it is. */
+  const accountCheck = useRef(0);
 
   // Setup form. Defaults are inferred, never persisted; only an in-progress mapping is saved.
   const [sourceId, setSourceId] = useState<string | null>(null);
@@ -158,7 +250,8 @@ export function App({ children }: { children?: React.ReactNode }) {
 
   /** Decisions the user has made; emotes without one are copied as the original. */
   const [choices, setChoices] = useState<Record<string, Choice>>({});
-  const [index, setIndex] = useState(0);
+  /** The card the user navigated to. The one shown is `index` (below): the same, unless the filter hides it. */
+  const [navIndex, setNavIndex] = useState(0);
   const [searches, setSearches] = useState<Record<string, SearchState>>({});
   const [applyStates, setApplyStates] = useState<Record<string, ApplyState>>({});
   /**
@@ -185,7 +278,16 @@ export function App({ children }: { children?: React.ReactNode }) {
   const [applying, setApplying] = useState(false);
   /** Names changed by the latest save (adds, swaps and removals), for the progress bar. */
   const [run, setRun] = useState<string[] | null>(null);
+  /** Roughly how long the save in progress takes in all, in ms. */
+  const [runTime, setRunTime] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
+  /** The emote list as a drawer, on screens too narrow for the sidebar. */
+  const [listOpen, setListOpen] = useState(false);
+  /**
+   * Whether the drawer was opened by touch. Only touch can swipe it away (a drag is a scroll), so that shows the
+   * drag handle; a mouse, pen or keyboard gets a close button instead.
+   */
+  const [listByTouch, setListByTouch] = useState(false);
   const [pause, setPause] = useState<{ bucket: string; seconds: number } | null>(null);
 
   /**
@@ -205,6 +307,8 @@ export function App({ children }: { children?: React.ReactNode }) {
     saveAnswer.current = null;
   };
   const sessionRef = useRef<Session | null>(null);
+  /** Where the user last was in each section, so switching tabs returns there. Only read in event handlers. */
+  const lastInSection = useRef<Partial<Record<Section, number>>>({});
   const searchPromises = useRef(new Map<string, Promise<SearchState>>());
   /** Aborts each emote's latest search; a newer search for the same emote, or a reset, cancels it. */
   const searchControllers = useRef(new Map<string, AbortController>());
@@ -229,27 +333,6 @@ export function App({ children }: { children?: React.ReactNode }) {
     };
   }, []);
 
-  // ---- Bootstrap: saved token and any in-progress mapping ----
-  useEffect(() => {
-    setToken(storage.token.get());
-    const saved = storage.mapping.get();
-    if (saved) {
-      setSourceId(saved.sourceId);
-      setTargetId(saved.targetId);
-      setTheme(saved.theme);
-      setCustomTags(saved.customTags);
-      setSortBy(saved.sortBy);
-      setResume(saved);
-    } else {
-      setTheme(themeForDate());
-      if (initialSelection) {
-        setSourceId(initialSelection.sourceId);
-        setTargetId(initialSelection.targetId);
-      }
-    }
-    setHydrated(true);
-  }, [storage, initialSelection]);
-
   useEffect(() => {
     // Wait until startup has loaded the real theme: before that `theme` is just the initial placeholder, and
     // writing it would overwrite the inline <head> script's (correct) palette for a frame.
@@ -266,16 +349,21 @@ export function App({ children }: { children?: React.ReactNode }) {
     setSearches({});
     setApplyStates({});
     setRun(null);
+    setRunTime(0);
+    setSaveDialog(null);
+    setFilter("all");
+    setListOpen(false);
     setTargetEntries({});
     removedRef.current = {};
     setRemovedState({});
     lastInSection.current = {};
     setChoices({});
-    setIndex(0);
+    setNavIndex(0);
   }, []);
 
   const signOut = useCallback(
     (reason?: string) => {
+      accountCheck.current++;
       storage.token.set(null);
       setToken(null);
       setMe(null);
@@ -295,51 +383,6 @@ export function App({ children }: { children?: React.ReactNode }) {
     saveAnswer.current = null;
     signOut();
   }, [signOut]);
-
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    (async () => {
-      setAuthError(null);
-      setAccount("checking");
-      try {
-        const user = await api.fetchMe(token);
-        if (cancelled) return;
-        if (!user)
-          return signOut(
-            "7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in.",
-          );
-        storage.token.set(token);
-        if (clearClipboardAfterLogin.current) {
-          clearClipboardAfterLogin.current = false;
-          // Overwrite the token on the clipboard so it can't be pasted on stream by accident.
-          navigator.clipboard.writeText(window.location.host).then(
-            () => setClipboardWarning(false),
-            () => setClipboardWarning(true),
-          );
-        }
-        setMe(user);
-        setAccount("loading-sets");
-        const editable = await api.fetchSetInfos(user.editableEmoteSetIds, token);
-        if (cancelled) return;
-        setSets(editable);
-        setAccount("ready");
-      } catch (e) {
-        if (cancelled) return;
-        if (e instanceof ApiError && e.status === 401)
-          return signOut(
-            clearClipboardAfterLogin.current
-              ? "7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in."
-              : "Your 7TV session has expired. Log in again to keep going.",
-          );
-        setAuthError(friendlyError(e));
-        setAccount("error");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, signOut, accountAttempt, api, storage]);
 
   const tags = useMemo(() => tagsFor(theme, customTags), [theme, customTags]);
 
@@ -370,11 +413,12 @@ export function App({ children }: { children?: React.ReactNode }) {
         ...prev,
         [alias]: { ...base, items: prev[alias]?.items ?? [], status: "loading" },
       }));
-      // The base emote is already offered as its own tile. Private and deleted emotes can't be added, so
-      // they're dropped (and counted) rather than offered.
+      // The base emote is already offered as its own tile. Emotes 7TV won't add to the target (deleted ones,
+      // and private ones unless the target's owner uploaded them) are dropped (and counted) rather than offered.
+      // In practice private emotes only come from a pasted link: 7TV's search leaves them out.
       const usable = (found: SearchResult[]) => {
         const others = found.filter((e) => e.id !== row.emote.id);
-        const items = others.filter((e) => !e.deleted && !e.flags.private);
+        const items = others.filter((e) => canAddTo(e, s.target.ownerId));
         return { items, hidden: others.length - items.length };
       };
       const p = searchLimit(async (): Promise<SearchState> => {
@@ -421,15 +465,26 @@ export function App({ children }: { children?: React.ReactNode }) {
 
   // ---- Start / resume a mapping ----
   const startMapping = useCallback(
-    async (params: MappingParams, saved?: MappingRecord) => {
-      if (!token || !me) return;
+    /**
+     * `login` is passed explicitly when called straight after logging in (the state hasn't re-rendered yet);
+     * otherwise the current token, user and sets are used.
+     */
+    async (
+      params: MappingParams,
+      saved?: MappingRecord,
+      login?: { token: string; me: Me; sets: EmoteSetInfo[] },
+    ) => {
+      const t = login?.token ?? token;
+      const user = login?.me ?? me;
+      const editable = login?.sets ?? sets;
+      if (!t || !user) return;
       setLoading(true);
       setLoadError(null);
       setSourceLinkError(null);
       // A pasted link (not one of the user's own sets) is only checked with 7TV now, on submit.
-      const pastedSource = !sets.some((x) => x.id === params.sourceId) && !saved;
+      const pastedSource = !editable.some((x) => x.id === params.sourceId) && !saved;
       if (pastedSource) {
-        const found = await api.fetchSetInfo(params.sourceId, token).catch(() => null);
+        const found = await api.fetchSetInfo(params.sourceId, t).catch(() => null);
         if (!found) {
           setSourceLinkError("No emote set found at that link. Check it and try again.");
           setLoading(false);
@@ -438,14 +493,14 @@ export function App({ children }: { children?: React.ReactNode }) {
       }
       try {
         const [source, target, sourceEmotes, targetEmotes] = await Promise.all([
-          api.fetchSetInfo(params.sourceId, token),
-          api.fetchSetInfo(params.targetId, token),
-          api.fetchSetEmotes(params.sourceId, token),
-          api.fetchSetEmotes(params.targetId, token),
+          api.fetchSetInfo(params.sourceId, t),
+          api.fetchSetInfo(params.targetId, t),
+          api.fetchSetEmotes(params.sourceId, t),
+          api.fetchSetEmotes(params.targetId, t),
         ]);
         if (!source) throw new Error("Your base set no longer exists.");
         if (!target) throw new Error("Your seasonal set no longer exists.");
-        if (!me.editableEmoteSetIds.includes(target.id))
+        if (!user.editableEmoteSetIds.includes(target.id))
           throw new Error("You can't edit that seasonal set.");
         // An emote counts as already mapped when the target has something under the same name (alias).
         const entries = new Map(targetEmotes.map((e) => [e.alias, e]));
@@ -475,16 +530,7 @@ export function App({ children }: { children?: React.ReactNode }) {
         const aliasAt = saved?.currentAlias
           ? steps.findIndex((st) => stepAlias(st) === saved.currentAlias)
           : -1;
-        const firstUndecided = s.pending.findIndex((r) => !restored[r.alias]);
-        const step =
-          savedDone && doneAt(savedDone) >= 0
-            ? doneAt(savedDone)
-            : aliasAt >= 0
-              ? aliasAt
-              : firstUndecided >= 0
-                ? firstUndecided
-                : // Every emote to add is decided: their done step. With none to add, the next section's start.
-                  Math.max(0, doneAt("pending"));
+        const step = savedDone && doneAt(savedDone) >= 0 ? doneAt(savedDone) : Math.max(0, aliasAt);
         // Swap journal: an entry whose name is back in the target finished (or rolled back) before the page
         // closed. One whose name is still missing was interrupted between remove and re-add; keep it so the
         // user can restore the previous emote.
@@ -516,7 +562,8 @@ export function App({ children }: { children?: React.ReactNode }) {
           await Promise.race([ready, sleep(FIRST_CARD_BUDGET_MS)]);
           if (sessionRef.current !== s) return; // superseded (e.g. cancelled) while waiting
         }
-        setIndex(step);
+        setNavIndex(step);
+        if (steps[step]) lastInSection.current = { [stepSection(steps[step])]: step };
         setSession(s);
         setResume(null);
       } catch (e) {
@@ -528,52 +575,143 @@ export function App({ children }: { children?: React.ReactNode }) {
     [token, me, resetSession, setRemoved, runSearch, api, sets],
   );
 
-  // Resume the saved mapping as soon as we know who the user is.
-  useEffect(() => {
-    if (me && resume && !session && !loading && !loadError) void startMapping(resume, resume);
-  }, [me, resume, session, loading, loadError, startMapping]);
+  /**
+   * Checks a token with 7TV and loads the user's editable sets, then picks up `pendingResume` (a saved in-progress
+   * mapping) if there is one. Runs at startup with the saved token, after "Paste and log in", and from Retry.
+   */
+  const checkAccount = async (t: string, pendingResume: MappingRecord | null) => {
+    const check = ++accountCheck.current;
+    const superseded = () => check !== accountCheck.current;
+    setAuthError(null);
+    setAccount("checking");
+    try {
+      const user = await api.fetchMe(t);
+      if (superseded()) return;
+      if (!user)
+        return signOut(
+          "7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in.",
+        );
+      storage.token.set(t);
+      if (clearClipboardAfterLogin.current) {
+        clearClipboardAfterLogin.current = false;
+        // Overwrite the token on the clipboard so it can't be pasted on stream by accident.
+        navigator.clipboard.writeText(window.location.host).then(
+          () => setClipboardWarning(false),
+          () => setClipboardWarning(true),
+        );
+      }
+      setMe(user);
+      setAccount("loading-sets");
+      const editable = await api.fetchSetInfos(user.editableEmoteSetIds, t);
+      if (superseded()) return;
+      setSets(editable);
+      setAccount("ready");
+      if (pendingResume)
+        void startMapping(pendingResume, pendingResume, { token: t, me: user, sets: editable });
+    } catch (e) {
+      if (superseded()) return;
+      if (e instanceof ApiError && e.status === 401)
+        return signOut(
+          clearClipboardAfterLogin.current
+            ? "7TV didn't accept that token. Run the command on 7tv.app again, then press Paste and log in."
+            : "Your 7TV session has expired. Log in again to keep going.",
+        );
+      setAuthError(friendlyError(e));
+      setAccount("error");
+    }
+  };
+
+  // ---- Bootstrap: saved token and any in-progress mapping ----
+  // Reads browser storage once after hydration (it isn't available during the static prerender).
+  const bootstrap = useEffectEvent(() => {
+    const savedToken = storage.token.get();
+    setToken(savedToken);
+    const saved = storage.mapping.get();
+    if (saved) {
+      setSourceId(saved.sourceId);
+      setTargetId(saved.targetId);
+      setTheme(saved.theme);
+      setCustomTags(saved.customTags);
+      setSortBy(saved.sortBy);
+      setResume(saved);
+    } else {
+      setTheme(themeForDate());
+      if (initialSelection) {
+        setSourceId(initialSelection.sourceId);
+        setTargetId(initialSelection.targetId);
+      }
+    }
+    setHydrated(true);
+    if (savedToken) void checkAccount(savedToken, saved);
+  });
+  useEffect(() => bootstrap(), []);
 
   const pending = useMemo(() => session?.pending ?? [], [session]);
   const rows = useMemo(() => session?.rows ?? [], [session]);
   const extras = useMemo(() => session?.extras ?? [], [session]);
   const steps = useMemo(() => session?.steps ?? [], [session]);
   const stepCount = steps.length;
-  const step = steps[index] as Step | undefined;
-  const pendingDoneStep = steps.findIndex((st) => st.kind === "done" && st.section === "pending");
   const stepOfAlias = useCallback(
     (alias: string) => steps.findIndex((st) => stepAlias(st) === alias),
     [steps],
   );
   const rowAtStep = useCallback((i: number) => stepRow(steps[i]), [steps]);
-  const doneStep = step?.kind === "done" ? step : undefined;
-  const section = step ? stepSection(step) : "pending";
   /** Sections with emotes in them, in order (each is a tab). */
   const sections = useMemo(() => [...new Set(steps.map(stepSection))], [steps]);
-  /** The emote on screen: a base emote, or (in "Not in base") a seasonal-set entry. */
-  const current = stepRow(step);
   const mappedAliases = useMemo(
     () => new Set((session?.mapped ?? []).map((r) => r.alias)),
     [session],
   );
-  const isMapped = (alias: string) => mappedAliases.has(alias);
   const extraAliases = useMemo(() => new Set(extras.map((e) => e.alias)), [extras]);
   const isExtra = (alias: string) => extraAliases.has(alias);
 
-  // Persist the in-progress mapping on every change.
-  const persist = useCallback(
-    (s: Session) =>
-      storage.mapping.set({
-        ...s.params,
-        choices,
-        currentAlias: stepAlias(step),
-        atDone: step?.kind === "done" ? step.section : undefined,
-        removed: removedRef.current,
-      }),
-    [choices, step, storage],
+  /** Names not in the target yet default to the original; names already in it default to staying as-is. */
+  const choiceOf = (alias: string): Choice =>
+    choices[alias] ?? (targetEntries[alias] ? KEEP : ORIGINAL);
+  /** What saving does with this row (see outcome() in lib/mapping.ts). */
+  const outcomeOf = (row: SetEmote) => outcome(row, choiceOf(row.alias), targetEntries[row.alias]);
+  /** The emote this row ends up as in the target (null = removed or not copied). */
+  const finalEmote = (row: SetEmote): EmoteSummary | null => {
+    const o = outcomeOf(row);
+    return o.kind === "remove" || o.kind === "skip" ? null : o.emote;
+  };
+  const isSwap = (row: SetEmote) => outcomeOf(row).kind === "swap";
+  const mappedKind = (row: SetEmote) => resultKind(row, outcomeOf(row));
+  /** " (swapping 2, removing 1)" for these rows, or "" when none of them change. */
+  const changeNote = (rs: SetEmote[]) => {
+    const swapping = rs.filter(isSwap).length;
+    const removing = rs.filter((r) => outcomeOf(r).kind === "remove").length;
+    const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`].filter(
+      Boolean,
+    );
+    return parts.length ? ` (${parts.join(", ")})` : "";
+  };
+
+  // ---- The filter: which cards exist ----
+  const filterState = useMemo<FilterState>(
+    () => ({ choices, targetEntries, applyStates, mapped: mappedAliases, extra: extraAliases }),
+    [choices, targetEntries, applyStates, mappedAliases, extraAliases],
   );
+  const visibility = useMemo(
+    () => visibilityFor(steps, filter, filterState),
+    [steps, filter, filterState],
+  );
+  const isStepVisible = (i: number) => visibility.visible[i] ?? false;
+  const matchingSections = visibility.matching;
+  /** Nothing matches the filter: the card area shows an empty state, like the list does. */
+  const noMatches = filter !== "all" && visibility.first === null;
+  /** The card on screen: the one the user navigated to, or the start of the list if the filter hides that one. */
+  const index = isStepVisible(navIndex) ? navIndex : (visibility.first ?? navIndex);
+  const step = steps[index] as Step | undefined;
+  const doneStep = step?.kind === "done" ? step : undefined;
+  const section = step ? stepSection(step) : "pending";
+  /** The emote on screen: a base emote, or (in "Not in base") a seasonal-set entry. */
+  const current = stepRow(step);
+
+  // Keep the saved in-progress mapping in step with every change (storage is outside React).
   useEffect(() => {
-    if (session) persist(session);
-  }, [session, persist, removed]);
+    if (session) storage.mapping.set(toRecord(session, choices, step, removed));
+  }, [session, choices, step, removed, storage]);
 
   const cancelMapping = async () => {
     const ok = await ask({
@@ -596,119 +734,122 @@ export function App({ children }: { children?: React.ReactNode }) {
   );
 
   // Search the emote on screen, then preload the next one (results + images) so stepping forward is instant.
-  // Stepping through fast would burn the search quota (~100 per window), so once AUTO_SEARCH_BURST automatic
-  // searches have gone out within AUTO_SEARCH_WINDOW_MS, the next one waits AUTO_SEARCH_DELAY_MS (spinner
-  // showing) and is dropped entirely if the user has moved on by then. Preloading pauses while that's the case.
-  // Searches the user asks for (Search button, filters, sort) are never throttled.
-  const autoSearchTimes = useRef<number[]>([]);
-  const steppingFast = useCallback(() => {
-    const now = Date.now();
-    autoSearchTimes.current = autoSearchTimes.current.filter(
-      (t) => now - t < AUTO_SEARCH_WINDOW_MS,
-    );
-    return autoSearchTimes.current.length >= AUTO_SEARCH_BURST;
-  }, []);
-  const autoSearch = useCallback(
-    (row: SetEmote) => {
-      const cached = searchPromises.current.get(row.alias);
-      if (cached) return cached;
-      autoSearchTimes.current.push(Date.now());
-      return ensureSearch(row);
-    },
-    [ensureSearch],
-  );
-
+  // While the user is flicking through cards (e.g. holding an arrow key), nothing is searched until they stop on
+  // one for SETTLE_MS, so cards they only pass over don't use up the search quota. Searches are also paced to
+  // stay under 7TV's limit (lib/seventv.ts): when no slot is free, the card's search waits for one (spinner
+  // showing) and is never sent if the user has moved on. Preloading only happens while a slot is spare.
+  const lastCardChange = useRef(0);
   useEffect(() => {
     if (!session) return;
+    const now = Date.now();
+    const rapid = now - lastCardChange.current < SETTLE_MS;
+    lastCardChange.current = now;
     let cancelled = false;
     const preloadNext = () => {
       const next = rowAtStep(index + 1) ?? rowAtStep(index + 2); // skip over a summary step
-      if (cancelled || !next || steppingFast()) return;
-      autoSearch(next).then((st) => {
+      if (cancelled || !next || searchPromises.current.has(next.alias)) return;
+      if (freeSearches() < 2) return;
+      ensureSearch(next).then((st) => {
         for (const e of st.items) void preloadImage(emoteImage(e.id, 3));
       });
       void preloadImage(emoteImage(next.emote.id, 3));
     };
-    // On an "All done!" step there's nothing to search, but the emote after it is worth preloading.
-    if (!current) {
-      preloadNext();
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (searchPromises.current.has(current.alias) || !steppingFast()) {
-      autoSearch(current).then(preloadNext);
-      return () => {
-        cancelled = true;
-      };
-    }
-    const timer = setTimeout(() => autoSearch(current).then(preloadNext), AUTO_SEARCH_DELAY_MS);
+    const searchNow = () => {
+      if (cancelled) return;
+      // On an "All done!" step there's nothing to search, but the emote after it is worth preloading.
+      if (!current) preloadNext();
+      else ensureSearch(current).then(preloadNext);
+    };
+    const cached = !current || searchPromises.current.has(current.alias);
+    const delay = Math.max(rapid ? SETTLE_MS : 0, cached ? 0 : searchWait());
+    const timer = delay > 0 ? setTimeout(searchNow, delay) : undefined;
+    if (!timer) searchNow();
     return () => {
       cancelled = true;
-      clearTimeout(timer); // moved on before the delay ran out: the search is never sent
+      clearTimeout(timer); // moved on before it ran: nothing is sent
     };
-  }, [session, current, index, rowAtStep, autoSearch, steppingFast]);
+  }, [session, current, index, rowAtStep, ensureSearch]);
 
-  const navigate = useCallback(
-    (delta: number) =>
-      setIndex((i) => Math.min(Math.max(0, i + delta), Math.max(0, stepCount - 1))),
-    [stepCount],
-  );
-
-  const choose = useCallback(
-    (choice: Choice, advance: boolean) => {
-      const alias = stepAlias(step);
-      if (!alias) return;
-      setChoices((prev) => ({ ...prev, [alias]: choice }));
-      if (advance) navigate(1);
+  /** The nearest step in a direction that `visible` allows, or null. */
+  const findVisible = (from: number, dir: 1 | -1, visible: (i: number) => boolean) => {
+    for (let i = from + dir; i >= 0 && i < stepCount; i += dir) if (visible(i)) return i;
+    return null;
+  };
+  /** Moves to a card, and remembers it as the user's place in its section. */
+  const go = useCallback(
+    (i: number) => {
+      setNavIndex(i);
+      const st = steps[i];
+      if (st) lastInSection.current = { ...lastInSection.current, [stepSection(st)]: i };
     },
-    [step, navigate],
+    [steps],
   );
-
-  const jumpToNextUndecided = () => {
-    const open = (r: SetEmote) => !choices[r.alias] && !targetEntries[r.alias];
-    const i = pending.findIndex((r, j) => j > index && open(r));
-    const k = i >= 0 ? i : pending.findIndex(open);
-    setIndex(k >= 0 ? k : pendingDoneStep);
-  };
-  /** Where the user last was in each section, so switching tabs returns there. */
-  const lastInSection = useRef<Partial<Record<Section, number>>>({});
-  useEffect(() => {
-    if (step) lastInSection.current[stepSection(step)] = index;
-  }, [step, index]);
-  const goToSection = (to: Section) => {
-    const i = lastInSection.current[to] ?? steps.findIndex((st) => stepSection(st) === to);
-    if (i >= 0) setIndex(i);
+  /** Steps through the cards the filter shows, from the one on screen. */
+  const navigate = (delta: number) => {
+    const dir = delta < 0 ? -1 : 1;
+    let at = index;
+    for (let n = Math.abs(delta); n > 0; n--) {
+      const next = findVisible(at, dir, isStepVisible);
+      if (next === null) break;
+      at = next;
+    }
+    go(at);
   };
 
-  // ---- Applying ----
-  /** Names not in the target yet default to the original; names already in it default to staying as-is. */
-  const choiceOf = (alias: string): Choice =>
-    choices[alias] ?? (targetEntries[alias] ? KEEP : ORIGINAL);
-  /** What saving does with this row (see outcome() in lib/mapping.ts). */
-  const outcomeOf = (row: SetEmote) => outcome(row, choiceOf(row.alias), targetEntries[row.alias]);
-  /** The emote this row ends up as in the target (null = removed or not copied). */
-  const finalEmote = (row: SetEmote): EmoteSummary | null => {
-    const o = outcomeOf(row);
-    return o.kind === "remove" || o.kind === "skip" ? null : o.emote;
+  const choose = (choice: Choice, advance: boolean) => {
+    const alias = stepAlias(step);
+    if (!alias) return;
+    setChoices((prev) => ({ ...prev, [alias]: choice }));
+    if (!advance) return;
+    // Move on by what the filter will show once this pick is in: the pick can take this card (and, if it was the
+    // section's last match, the section's done card) out of the filter. The next card still shown, else the
+    // nearest one before it; with nothing left, the empty state shows.
+    const after = visibilityFor(steps, filter, {
+      ...filterState,
+      choices: { ...choices, [alias]: choice },
+    });
+    const shown = (i: number) => after.visible[i] ?? false;
+    const to = findVisible(index, 1, shown) ?? findVisible(index, -1, shown);
+    if (to !== null) go(to);
   };
-  const isSwap = (row: SetEmote) => outcomeOf(row).kind === "swap";
+
+  /** Shows a card even if the filter hides it, by turning the filter off. */
+  const goShowing = (i: number) => {
+    if (!isStepVisible(i)) setFilter("all");
+    go(i);
+  };
   /**
-   * For the filters, an already-added emote counts as a seasonal pick or a copy by what the target ends up with:
-   * a different emote than the base one, or the base emote itself. Removed ones are neither.
+   * Switches the filter. The emote on screen stays if the new filter shows it; otherwise (or from a done card) it
+   * goes to the first match in the list. With no matches, the card area shows an empty state.
    */
-  const mappedKind = (row: SetEmote): "replace" | "original" | null => {
-    const e = finalEmote(row);
-    return !e ? null : e.id === row.emote.id ? "original" : "replace";
+  const changeFilter = (next: Filter) => {
+    const v = visibilityFor(steps, next, filterState);
+    if (current && v.visible[index]) go(index);
+    else if (v.first !== null) go(v.first);
+    setFilter(next);
   };
-  /** " (swapping 2, removing 1)" for these rows, or "" when none of them change. */
-  const changeNote = (rs: SetEmote[]) => {
-    const swapping = rs.filter(isSwap).length;
-    const removing = rs.filter((r) => outcomeOf(r).kind === "remove").length;
-    const parts = [swapping && `swapping ${swapping}`, removing && `removing ${removing}`].filter(
-      Boolean,
-    );
-    return parts.length ? ` (${parts.join(", ")})` : "";
+  const workspaceMain = useRef<HTMLDivElement>(null);
+  /** Picking an emote in the list: show it in the card, and bring the card back into view if it's scrolled away. */
+  const jumpFromList = useCallback(
+    (i: number) => {
+      go(i);
+      setListOpen(false);
+      requestAnimationFrame(() => {
+        const el = workspaceMain.current;
+        if (el && el.getBoundingClientRect().top < 0)
+          el.scrollIntoView({ block: "start", behavior: "smooth" });
+      });
+    },
+    [go],
+  );
+  /** Back to where the user last was in a section, or its first card the filter shows. */
+  const goToSection = (to: Section) => {
+    const last = lastInSection.current[to];
+    const i =
+      last !== undefined && isStepVisible(last)
+        ? last
+        : steps.findIndex((st, j) => stepSection(st) === to && isStepVisible(j));
+    if (i >= 0) go(i);
   };
 
   // Every row is judged by what the target holds now, whatever section it was loaded into: a new emote that
@@ -730,12 +871,12 @@ export function App({ children }: { children?: React.ReactNode }) {
   const projected = usedNow + plan.length + swapSlots - freedSlots;
 
   const stats = useMemo(() => {
-    const counts = { replace: 0, original: 0, exclude: 0, undecided: 0, remove: 0, errors: 0 };
+    const counts = { replace: 0, original: 0, exclude: 0, remove: 0, errors: 0 };
     for (const r of pending) {
       const c = choices[r.alias];
       if (c && (c.kind === "replace" || c.kind === "original" || c.kind === "exclude"))
         counts[c.kind]++;
-      else if (!targetEntries[r.alias]) counts.undecided++; // already-added emotes don't need reviewing
+      else if (!targetEntries[r.alias]) counts.original++; // no pick: copied as-is
     }
     for (const r of allRows)
       if (choices[r.alias]?.kind === "remove" && targetEntries[r.alias]) counts.remove++;
@@ -757,7 +898,7 @@ export function App({ children }: { children?: React.ReactNode }) {
     if (entry) next[alias] = entry;
     else delete next[alias];
     setRemoved(next);
-    persist(s);
+    storage.mapping.set(toRecord(s, choices, step, next));
   };
 
   const apply = async () => {
@@ -873,7 +1014,9 @@ export function App({ children }: { children?: React.ReactNode }) {
       }
 
       const replaced = toAdd.filter((r) => choiceOf(r.alias).kind === "replace").length;
-      const undecided = toAdd.filter((r) => !choices[r.alias]).length;
+      /** Adds and removes to send: a swap is one of each. */
+      const changeCount = toRemove.length + toAdd.length + 2 * toSwap.length;
+      const estimate = saveTime(changeCount);
       const ok = await saveStep({
         title: `Save to ${s.target.name}?`,
         body: (
@@ -886,7 +1029,6 @@ export function App({ children }: { children?: React.ReactNode }) {
                   : replaced === 0
                     ? `Add ${plural(toAdd.length, "emote")} copied from the base set`
                     : `Add ${plural(toAdd.length, "emote")}: ${replaced} seasonal, ${toAdd.length - replaced} copied from the base set`}
-                {undecided ? ` (${undecided} unreviewed)` : ""}
               </li>
             )}
             {toSwap.length > 0 && <li>Swap {plural(toSwap.length, "emote")}</li>}
@@ -896,6 +1038,7 @@ export function App({ children }: { children?: React.ReactNode }) {
                 {s.target.name} will use {used + slotsNeeded - freed} of {freshCapacity} slots
               </li>
             )}
+            {estimate >= LONG_SAVE_MS && <li>Takes {duration(estimate)}, so keep this tab open</li>}
           </ul>
         ),
         confirmLabel: toRemove.length || toSwap.length ? "Save changes" : "Add emotes",
@@ -905,6 +1048,9 @@ export function App({ children }: { children?: React.ReactNode }) {
 
       setSaveDialog({ kind: "saving" });
       setApplying(true);
+      setRunTime(saveTime(changeCount));
+      /** Pause after each change (see Services.changeDelay). */
+      const gap = changeDelay(changeCount);
       setRun([...toRemove, ...toAdd, ...toSwap].map((r) => r.alias));
       setApplyStates((prev) => {
         const next = { ...prev };
@@ -940,7 +1086,7 @@ export function App({ children }: { children?: React.ReactNode }) {
         } catch (e) {
           if (fail(entry, e)) break;
         }
-        await sleep(250);
+        await sleep(gap);
       }
 
       for (const row of full || fatal ? [] : toAdd) {
@@ -964,7 +1110,7 @@ export function App({ children }: { children?: React.ReactNode }) {
         } catch (e) {
           if (fail(row, e)) break;
         }
-        await sleep(250);
+        await sleep(gap);
       }
 
       // Swaps: remove the current entry, add the new emote under the same name, and roll back on failure.
@@ -1015,7 +1161,7 @@ export function App({ children }: { children?: React.ReactNode }) {
             : ` The old one (${cur.emote.defaultName}) couldn't be put back either. Save again to retry, or pick the previous emote to put it back.`;
           if (fail(row, e, suffix)) break;
         }
-        await sleep(250);
+        await sleep(gap);
       }
 
       setApplyStates((prev) => {
@@ -1090,39 +1236,39 @@ export function App({ children }: { children?: React.ReactNode }) {
   };
 
   // ---- Render ----
-  const matchesFilter = (row: SetEmote) => {
-    const c = choices[row.alias];
-    if (filter === "all") return true;
-    if (filter === "errors") return applyStates[row.alias]?.state === "error";
-    if (filter === "changed") return isSwap(row);
-    if (filter === "remove") return outcomeOf(row).kind === "remove";
-    if (isMapped(row.alias)) return mappedKind(row) === filter;
-    if (isExtra(row.alias)) return false;
-    if (filter === "undecided") return !c;
-    return c?.kind === filter;
+  /** "2 of 5" within the card's section, counting only emotes the filter shows. */
+  const positionOf = (i: number) => {
+    const st = steps[i];
+    if (!st || st.kind === "done") return "";
+    if (filter === "all") return `${st.n} of ${st.of}`;
+    const at = visibility.rank[i] - 1;
+    const total = visibility.shown[stepSection(st)];
+    const label = filterItems
+      .find((f) => f.id === filter)
+      ?.label.replace(/ \(\d+\)$/, "")
+      .toLowerCase();
+    return at >= 0 ? `${at + 1} of ${total} ${label}` : `not ${label}`;
   };
+  const canPrev = findVisible(index, -1, isStepVisible) !== null;
+  const canNext = findVisible(index, 1, isStepVisible) !== null;
   const targetName = session?.target.name ?? "your seasonal set";
-  const sectionRows = (kind: Step["kind"]) =>
-    steps.flatMap((st, i) => {
-      if (st.kind !== kind) return [];
-      const row = stepRow(st)!;
-      return matchesFilter(row) ? [{ row, index: i }] : [];
-    });
-  const sectionTitle: Record<Section, string> = {
-    pending: "New",
-    mapped: "Already added",
-    extra: "Not in base",
-  };
   const sectionSize: Record<Section, number> = {
     pending: pending.length,
     mapped: session?.mapped.length ?? 0,
     extra: extras.length,
   };
-  const overviewSections = [
-    { title: sectionTitle.pending, rows: sectionRows("pending") },
-    { title: sectionTitle.mapped, rows: sectionRows("mapped") },
-    { title: sectionTitle.extra, rows: sectionRows("extra"), extra: true },
-  ];
+  /** The emote list's sections: the emotes the filter shows, each with its step. Stable between unrelated renders. */
+  const overviewSections = useMemo(() => {
+    const rowsOf = (kind: Step["kind"]) =>
+      steps.flatMap((st, i) =>
+        st.kind === kind && visibility.visible[i] ? [{ row: stepRow(st)!, index: i }] : [],
+      );
+    return [
+      { title: sectionTitle.pending, rows: rowsOf("pending") },
+      { title: sectionTitle.mapped, rows: rowsOf("mapped") },
+      { title: sectionTitle.extra, rows: rowsOf("extra"), extra: true },
+    ];
+  }, [steps, visibility]);
 
   const mappedKinds = { replace: 0, original: 0 };
   for (const r of session?.mapped ?? []) {
@@ -1132,7 +1278,6 @@ export function App({ children }: { children?: React.ReactNode }) {
   const themeItems = Object.entries(THEMES).map(([id, t]) => ({ id, label: t.label }));
   const filterItems = [
     { id: "all", label: `All (${rows.length + extras.length})` },
-    { id: "undecided", label: `Unreviewed (${stats.undecided})` },
     { id: "replace", label: `Seasonal picks (${stats.replace + mappedKinds.replace})` },
     { id: "original", label: `Copied as-is (${stats.original + mappedKinds.original})` },
     { id: "exclude", label: `Skipped (${stats.exclude})` },
@@ -1160,15 +1305,68 @@ export function App({ children }: { children?: React.ReactNode }) {
   const runDone =
     run?.filter((a) => !["queued", "running"].includes(applyStates[a]?.state ?? "queued")).length ??
     0;
+  /** Rough time left on a long save, e.g. "About 3 minutes left" (null for short saves). */
+  const runLeft = run?.length ? runTime * (1 - runDone / run.length) : 0;
+  const timeLeft =
+    runTime < LONG_SAVE_MS
+      ? null
+      : runLeft < LONG_SAVE_MS
+        ? "Less than a minute left"
+        : `${duration(runLeft).replace(/^a/, "A")} left`;
+
+  /** The filter and every emote by section; shown as the sidebar, or in the drawer on narrow screens. */
+  const filterSelect = (
+    <SelectField
+      aria-label="Filter emotes"
+      className="compact emote-list-filter"
+      items={filterItems}
+      value={filter}
+      onChange={(id) => changeFilter(id as Filter)}
+    />
+  );
+  const emoteList = (
+    <>
+      {overviewSections.some((sec) => sec.rows.length) ? (
+        <MappingOverview
+          sections={overviewSections}
+          current={index}
+          choices={choices}
+          targetEntries={targetEntries}
+          applyStates={applyStates}
+          onJump={jumpFromList}
+        />
+      ) : (
+        <p className="muted small center">No emotes match this filter.</p>
+      )}
+    </>
+  );
 
   /** The card for the current step. */
-  const card = !session ? null : doneStep ? (
+  const card = !session ? null : noMatches ? (
+    <section className="card focus empty-state" aria-label="No matching emotes">
+      <div className="summary-emoji" aria-hidden>
+        🔍
+      </div>
+      <h2>Nothing here</h2>
+      <p className="muted">
+        No emotes in “{filterItems.find((f) => f.id === filter)?.label.replace(/ \(\d+\)$/, "")}”.
+      </p>
+      <Button className="btn" onPress={() => changeFilter("all")}>
+        Show all emotes
+      </Button>
+    </section>
+  ) : doneStep ? (
     <MappingSummary
       key={`done:${doneStep.section}`}
       section={doneStep.section}
-      next={doneStep.next}
+      next={
+        sections
+          .slice(sections.indexOf(doneStep.section) + 1)
+          .find((sec) => filter === "all" || matchingSections.has(sec)) ?? null
+      }
+      isLast={doneStep.next === null}
       multiSection={sections.length > 1}
-      canPrev={index > 0}
+      canPrev={canPrev}
       counts={stats}
       swapCount={swaps.length}
       removeCount={removals.length}
@@ -1176,7 +1374,6 @@ export function App({ children }: { children?: React.ReactNode }) {
       canApply={!applying && !preparing}
       applyLabel={preparing ? "Checking your seasonal set…" : applyLabel}
       onApply={apply}
-      onReviewUndecided={jumpToNextUndecided}
       onNextSection={goToSection}
       onNavigate={navigate}
     />
@@ -1184,15 +1381,14 @@ export function App({ children }: { children?: React.ReactNode }) {
     <MappingFocus
       key={`${session.source.id}:${current.alias}`}
       source={current}
-      position={step && "n" in step ? `${step.n} of ${step.of}` : ""}
-      canPrev={index > 0}
-      canNext={index < stepCount - 1}
+      position={positionOf(index)}
+      canPrev={canPrev}
+      canNext={canNext}
       inTarget={targetEntries[current.alias]}
       previous={removed[current.alias]}
       tags={session.tags}
       choice={choiceOf(current.alias)}
       inBase={!isExtra(current.alias)}
-      decided={!!choices[current.alias] && !targetEntries[current.alias]}
       search={searches[current.alias]}
       apply={applyStates[current.alias]}
       defaultSort={session.params.sortBy}
@@ -1220,7 +1416,8 @@ export function App({ children }: { children?: React.ReactNode }) {
         </span>
       </h1>
       <p className="tagline">Make a seasonal copy of your 7TV emote set</p>
-      {/* The demo's account is fake, so there's no user (or Sign out) to show. */}
+      {/* The demo's account is fake, so there's no user (or Sign out) to show; it gets its own action instead. */}
+      {mode !== "live" && headerAction && <div className="me">{headerAction}</div>}
       {me && mode === "live" && (
         <div className="me">
           {me.mainConnection?.platformAvatarUrl && (
@@ -1268,6 +1465,7 @@ export function App({ children }: { children?: React.ReactNode }) {
                   </>
                 )}
               </ProgressBar>
+              {timeLeft && <p className="muted small time-left">{timeLeft}</p>}
               {pause && pause.bucket !== "search" && (
                 <p className="notice small">
                   7TV asked us to slow down. Carrying on in {pause.seconds}s.
@@ -1296,6 +1494,7 @@ export function App({ children }: { children?: React.ReactNode }) {
             onToken={(t) => {
               clearClipboardAfterLogin.current = true;
               setToken(t);
+              void checkAccount(t, resume);
             }}
             error={authError}
           />
@@ -1304,7 +1503,10 @@ export function App({ children }: { children?: React.ReactNode }) {
             <p>{me ? "Couldn't load your emote sets." : "Couldn't check your 7TV session."}</p>
             <p className="error">{authError}</p>
             <div className="buttons-row">
-              <Button className="btn primary" onPress={() => setAccountAttempt((n) => n + 1)}>
+              <Button
+                className="btn primary"
+                onPress={() => token && void checkAccount(token, resume)}
+              >
                 Retry
               </Button>
               <Button className="btn" onPress={() => signOut()}>
@@ -1336,9 +1538,6 @@ export function App({ children }: { children?: React.ReactNode }) {
                   <span>
                     <b>{stats.exclude}</b> skipped
                   </span>
-                  <span>
-                    <b>{stats.undecided}</b> unreviewed
-                  </span>
                   {session.mapped.length > 0 && (
                     <span className="muted">
                       {session.mapped.length} already added
@@ -1361,11 +1560,6 @@ export function App({ children }: { children?: React.ReactNode }) {
                 </div>
               </div>
               <div className="buttons">
-                {stats.undecided > 0 && (
-                  <Button className="btn" onPress={jumpToNextUndecided}>
-                    Next unreviewed
-                  </Button>
-                )}
                 <Button className="btn primary" onPress={apply} isDisabled={preparing || applying}>
                   {preparing ? (
                     <>
@@ -1390,7 +1584,7 @@ export function App({ children }: { children?: React.ReactNode }) {
                             <li key={r.alias}>
                               <Button
                                 className="link-button"
-                                onPress={() => setIndex(stepOfAlias(r.alias))}
+                                onPress={() => goShowing(stepOfAlias(r.alias))}
                               >
                                 {r.alias}
                               </Button>
@@ -1419,49 +1613,85 @@ export function App({ children }: { children?: React.ReactNode }) {
               )}
             </section>
 
-            {sections.length > 1 ? (
-              // One tab per section with emotes in it; a single section needs no tabs.
-              <Tabs
-                className="section-tabs"
-                selectedKey={section}
-                onSelectionChange={(key) => goToSection(key as Section)}
-              >
-                <TabList className="section-tab-list" aria-label="Sections">
-                  {sections.map((sec) => (
-                    <Tab key={sec} id={sec} className="section-tab">
-                      {sectionTitle[sec]}{" "}
-                      <span className="section-tab-count">{sectionSize[sec]}</span>
-                    </Tab>
-                  ))}
-                </TabList>
-                <TabPanel id={section}>{card}</TabPanel>
-              </Tabs>
-            ) : (
-              card
-            )}
-
-            {rows.length + extras.length > 0 && (
-              <section className="card" aria-label="All emotes">
-                <div className="overview-head">
-                  <h3>All emotes</h3>
-                  <SelectField
-                    aria-label="Filter emotes"
-                    className="compact"
-                    items={filterItems}
-                    value={filter}
-                    onChange={(id) => setFilter(id as Filter)}
-                  />
-                </div>
-                <MappingOverview
-                  sections={overviewSections}
-                  current={index}
-                  choices={choices}
-                  targetEntries={targetEntries}
-                  applyStates={applyStates}
-                  onJump={setIndex}
-                />
-              </section>
-            )}
+            {/* The list of every emote sits beside the card (a drawer on narrow screens) and drives it: picking a
+                row shows that emote, and the filter decides which emotes the arrows step through. */}
+            <div className="workspace">
+              {rows.length + extras.length > 0 && (
+                <aside className="card emote-list" aria-label="All emotes">
+                  {/* The box matches the card's height; its contents stay on screen as a tall card scrolls. */}
+                  <div className="emote-list-inner">
+                    {filterSelect}
+                    {emoteList}
+                  </div>
+                </aside>
+              )}
+              <div className="workspace-main" ref={workspaceMain}>
+                {/* Narrow screens: the filter stays on the page; only the list itself is in the sheet. */}
+                {rows.length + extras.length > 0 && (
+                  <div className="list-bar">
+                    {filterSelect}
+                    <Button
+                      className="btn small"
+                      onPress={(e) => {
+                        setListByTouch(e.pointerType === "touch");
+                        setListOpen(true);
+                      }}
+                    >
+                      ☰ List
+                    </Button>
+                  </div>
+                )}
+                {sections.length > 1 ? (
+                  // One tab per section with emotes in it; a single section needs no tabs. On wide screens the
+                  // list's section headings stand in for the tab bar, so it's hidden there.
+                  <Tabs
+                    className="section-tabs"
+                    selectedKey={section}
+                    onSelectionChange={(key) => goToSection(key as Section)}
+                  >
+                    <TabList className="section-tab-list" aria-label="Sections">
+                      {/* With a filter on, tabs count (and only offer) sections with matching emotes. */}
+                      {sections
+                        .filter(
+                          (sec) => filter === "all" || matchingSections.has(sec) || sec === section,
+                        )
+                        .map((sec) => (
+                          <Tab key={sec} id={sec} className="section-tab">
+                            {sectionTitle[sec]}{" "}
+                            <span className="section-tab-count">
+                              {filter === "all" ? sectionSize[sec] : visibility.shown[sec]}
+                            </span>
+                          </Tab>
+                        ))}
+                    </TabList>
+                    <TabPanel id={section}>{card}</TabPanel>
+                  </Tabs>
+                ) : (
+                  card
+                )}
+              </div>
+            </div>
+            <SheetOverlay position="left" isOpen={listOpen} onOpenChange={setListOpen}>
+              <SheetBackdrop swipeAnimation="sheet-backdrop" />
+              <Sheet overscrollPadding stackAnimation="sheet-scale-back">
+                {listByTouch && <div className="sheet-handle" />}
+                <SheetContent aria-label="All emotes">
+                  {!listByTouch && (
+                    <div className="sheet-head">
+                      <Heading slot="title">All emotes</Heading>
+                      <Button
+                        className="btn small"
+                        aria-label="Close list"
+                        onPress={() => setListOpen(false)}
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  )}
+                  {emoteList}
+                </SheetContent>
+              </Sheet>
+            </SheetOverlay>
           </>
         ) : resume ? (
           <section className="card narrow center stack">
@@ -1570,7 +1800,6 @@ export function App({ children }: { children?: React.ReactNode }) {
             </div>
           </section>
         )}
-        {children}
       </main>
     </LogInAgainContext.Provider>
   );

@@ -15,9 +15,7 @@ export default function DemoPage() {
   return (
     <ServicesProvider value={services}>
       <DemoRibbon />
-      <App>
-        <ExitDemo />
-      </App>
+      <App headerAction={<ExitDemo />} />
     </ServicesProvider>
   );
 }

@@ -35,7 +35,7 @@ export interface SearchState extends SearchOptions {
   via?: "link" | "link-missing";
   items: SearchResult[];
   total: number;
-  /** Results dropped because they can't be added (private or deleted). */
+  /** Results dropped because 7TV won't add them to the target (deleted, or someone else's private emote). */
   hidden: number;
   error?: string;
 }

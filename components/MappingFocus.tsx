@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
   Button,
   Checkbox,
@@ -115,7 +115,6 @@ export function MappingFocus({
   previous,
   tags,
   choice,
-  decided,
   search,
   apply,
   defaultSort,
@@ -137,7 +136,6 @@ export function MappingFocus({
   /** The theme's tags, for labelling the tag filter. */
   tags: string[];
   choice: Choice;
-  decided: boolean;
   search: SearchState | undefined;
   /** Result of the last attempt to add or swap this emote, if any. */
   apply: ApplyState | undefined;
@@ -172,22 +170,24 @@ export function MappingFocus({
     [search, current, previous],
   );
 
+  // An effect event always sees the latest props, so the listener is attached once rather than on every change.
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (shouldIgnoreKey(e)) return;
+    if (e.key === "ArrowLeft") onNavigate(-1);
+    else if (e.key === "ArrowRight" || e.key === "Enter") onNavigate(1);
+    else if (e.key === "0") onChoose(baseline, true);
+    // X: skip (not in the seasonal set yet) or remove (already in it).
+    else if (e.key.toLowerCase() === "x") onChoose({ kind: mapped ? "remove" : "exclude" }, true);
+    else if (/^[1-9]$/.test(e.key) && !loading && items[Number(e.key) - 1])
+      onChoose({ kind: "replace", emote: items[Number(e.key) - 1] }, true);
+    else return;
+    e.preventDefault();
+  });
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (shouldIgnoreKey(e)) return;
-      if (e.key === "ArrowLeft") onNavigate(-1);
-      else if (e.key === "ArrowRight" || e.key === "Enter") onChoose(choice, true);
-      else if (e.key === "0") onChoose(baseline, true);
-      // X: skip (not in the seasonal set yet) or remove (already in it).
-      else if (e.key.toLowerCase() === "x") onChoose({ kind: mapped ? "remove" : "exclude" }, true);
-      else if (/^[1-9]$/.test(e.key) && !loading && items[Number(e.key) - 1])
-        onChoose({ kind: "replace", emote: items[Number(e.key) - 1] }, true);
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [choice, items, loading, mapped, baseline, onChoose, onNavigate]);
+    const listener = (e: KeyboardEvent) => onKey(e);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
 
   const aliased = source.alias !== source.emote.defaultName;
   const chosen = choice.kind === "replace" ? choice.emote : null;
@@ -255,12 +255,11 @@ export function MappingFocus({
               ""
             )}
             {position}
-            {decided ? " · picked" : ""}
           </div>
         </div>
         <Button
           className={`btn nav${canNext ? "" : " invisible"}`}
-          onPress={() => onChoose(choice, true)}
+          onPress={() => onNavigate(1)}
           isDisabled={!canNext}
           aria-label="Next"
         >
@@ -408,7 +407,7 @@ export function MappingFocus({
               items.length ? (
                 "Found the emote from that link"
               ) : search.hidden ? (
-                "That emote is private or deleted, so it can't be added"
+                "That emote can't be added: it's deleted, or private (only its owner can add it, to their own sets)"
               ) : (
                 "That link is the emote that's already here"
               )

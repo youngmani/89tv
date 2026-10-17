@@ -43,6 +43,69 @@ function pauseFrom(headers: Record<string, string> | undefined, fallbackBucket: 
   return pausedUntil[bucket];
 }
 
+// Both buckets we use allow 100 requests per 60s, counted in fixed windows we can't see the start of. Rejected
+// requests count too, so it's much better to never hit the limit than to wait it out. Requests are paced on
+// our side: at most PACE_BURST in any PACE_BURST × 60s / PACE_LIMIT (a quick burst, then a steady ~0.63s apart).
+// That keeps every 60s window, wherever it starts, at PACE_LIMIT or fewer (a little under 7TV's 100, to leave
+// room for 7tv.app open in another tab).
+const PACE_LIMIT = 95;
+const PACE_BURST = 10;
+const PACE_PERIOD_MS = (PACE_BURST * 60_000) / PACE_LIMIT;
+
+/** Spaces out requests: at most `burst` may start in any `period`. Requests go out in the order they ask. */
+class Pacer {
+  private starts: number[] = [];
+  private queue: Promise<unknown> = Promise.resolve();
+
+  constructor(
+    readonly burst: number,
+    readonly period: number,
+  ) {}
+
+  /** How long until a request could start (0 if one could start now). */
+  wait(now = Date.now()) {
+    while (this.starts.length && this.starts[0] <= now - this.period) this.starts.shift();
+    return this.starts.length < this.burst
+      ? 0
+      : this.starts[this.starts.length - this.burst] + this.period - now;
+  }
+
+  /** How many requests could start right now. */
+  free(now = Date.now()) {
+    this.wait(now);
+    return this.burst - this.starts.length;
+  }
+
+  /** Waits for a turn. An aborted request gives up its place without using a slot. */
+  take(signal?: AbortSignal) {
+    const turn = this.queue.then(async () => {
+      for (let ms = this.wait(); ms > 0; ms = this.wait()) await sleep(ms, signal);
+      signal?.throwIfAborted();
+      this.starts.push(Date.now());
+    });
+    this.queue = turn.catch(() => {});
+    return turn;
+  }
+}
+
+const pacers: Partial<Record<Bucket, Pacer>> = {
+  search: new Pacer(PACE_BURST, PACE_PERIOD_MS),
+  emote_set_change: new Pacer(PACE_BURST, PACE_PERIOD_MS),
+};
+
+/** How many searches could go out right now without waiting. */
+export const freeSearches = () => pacers.search!.free();
+/** How long until a search could go out (0 if it could now). */
+export const searchWait = () => pacers.search!.wait();
+
+/** Roughly how long a request takes, for estimates. */
+const TYPICAL_REQUEST_MS = 300;
+/** Roughly how long `n` adds/removes take, given the pacing above. */
+export function setChangeTime(n: number) {
+  const pacer = pacers.emote_set_change!;
+  return Math.max(n * TYPICAL_REQUEST_MS, ((n - pacer.burst) * pacer.period) / pacer.burst);
+}
+
 async function waitForBuckets(bucket: Bucket, signal?: AbortSignal) {
   for (;;) {
     const until = Math.max(pausedUntil[bucket] ?? 0, pausedUntil.global ?? 0);
@@ -61,6 +124,7 @@ export async function gql<T>(
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     await waitForBuckets(bucket, signal);
+    await pacers[bucket]?.take(signal);
 
     const res = await fetch(GQL_ENDPOINT, {
       method: "POST",
@@ -112,6 +176,8 @@ export interface EmoteSummary {
   deleted: boolean;
   tags: string[];
   flags: { animated: boolean; defaultZeroWidth: boolean; private: boolean };
+  /** The uploader's user ID. A private emote can only go into sets this user owns. */
+  ownerId: string;
   owner: { mainConnection: { platformDisplayName: string } | null } | null;
 }
 
@@ -126,6 +192,8 @@ export interface EmoteSetInfo {
   id: string;
   name: string;
   capacity: number | null;
+  /** The owning user's ID (null for sets without an owner). */
+  ownerId: string | null;
   owner: { mainConnection: { platformDisplayName: string } | null } | null;
   emotes: { totalCount: number };
 }
@@ -152,6 +220,13 @@ export const ownerName = (o: { owner: EmoteSummary["owner"] }) =>
   o.owner?.mainConnection?.platformDisplayName ?? "unknown";
 
 /**
+ * Whether 7TV's addEmote would accept this emote into a set owned by `setOwnerId`: deleted emotes never, and
+ * private ones only into a set their uploader owns (apps/api/src/http/v4/gql/mutations/emote_set/operation.rs).
+ */
+export const canAddTo = (e: EmoteSummary, setOwnerId: string | null) =>
+  !e.deleted && (!e.flags.private || (setOwnerId != null && e.ownerId === setOwnerId));
+
+/**
  * An emote ID from what the user typed: a bare ID, or a link containing one (7tv.app/emotes/<id>,
  * cdn.7tv.app/emote/<id>/2x.webp, …). Plain search text never matches.
  */
@@ -170,8 +245,8 @@ export function parseSetId(input: string): string | null {
 
 // ---------- Queries ----------
 
-const EMOTE_FIELDS = `id defaultName deleted tags flags { animated defaultZeroWidth private } owner { mainConnection { platformDisplayName } }`;
-const SET_INFO_FIELDS = `id name capacity owner { mainConnection { platformDisplayName } } emotes(page: 1, perPage: 1) { totalCount }`;
+const EMOTE_FIELDS = `id defaultName deleted tags flags { animated defaultZeroWidth private } ownerId owner { mainConnection { platformDisplayName } }`;
+const SET_INFO_FIELDS = `id name capacity ownerId owner { mainConnection { platformDisplayName } } emotes(page: 1, perPage: 1) { totalCount }`;
 
 export async function fetchMe(token: string): Promise<Me | null> {
   const d = await gql<{ users: { me: Me | null } }>(
@@ -358,7 +433,7 @@ export function friendlyError(e: unknown): string {
   if (isCapacityError(e)) return "Your seasonal set is full.";
   if (isConflictError(e)) return "Your seasonal set already has an emote with this name.";
   if (/emote is private/i.test(msg))
-    return "This emote is private, so it can't be added. Pick a different one.";
+    return "This emote is private, and only its owner can add it to their own sets. Pick a different one.";
   if (/emote not found/i.test(msg))
     return "This emote has been deleted from 7TV. Pick a different one.";
   if (/emote set not found/i.test(msg)) return "Your seasonal set no longer exists.";

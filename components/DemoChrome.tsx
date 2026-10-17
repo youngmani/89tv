@@ -12,16 +12,14 @@ export function DemoRibbon() {
   );
 }
 
-/** Shown at the bottom of the demo, just above the footer. */
+/** Shown in the header, where the live app has the user's name and Sign out. */
 export function ExitDemo() {
   const router = useRouter();
   /** Like "Try the demo": the app is only prefetched once the user shows interest (hover or keyboard focus). */
   const prefetchApp = () => router.prefetch("/");
   return (
-    <p className="exit-demo">
-      <Link href="/" onHoverStart={prefetchApp} onFocus={prefetchApp}>
-        Exit demo
-      </Link>
-    </p>
+    <Link href="/" onHoverStart={prefetchApp} onFocus={prefetchApp}>
+      Exit demo
+    </Link>
   );
 }

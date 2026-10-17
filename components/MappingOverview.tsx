@@ -1,7 +1,14 @@
 "use client";
 
-import { memo } from "react";
-import { Button } from "react-aria-components";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import {
+  GridList,
+  GridListHeader,
+  GridListItem,
+  GridListSection,
+  ListLayout,
+  Virtualizer,
+} from "react-aria-components";
 import { Image } from "@/components/Image";
 import { type ApplyState, type Choice, KEEP, ORIGINAL, type Outcome, outcome } from "@/lib/mapping";
 import { type SetEmote, emoteImage, ownerName } from "@/lib/seventv";
@@ -27,8 +34,7 @@ function describe(
     what = `${where}swap ${o.current.defaultName} by ${ownerName(o.current)} for ${o.emote.defaultName} by ${ownerName(o.emote)}`;
   else if (o.kind === "keep")
     what = extra ? `${where}keeping` : `already in the seasonal set as ${o.emote.defaultName}`;
-  else if (!c) what = "unreviewed";
-  else if (o.kind === "skip") what = c.kind === "remove" ? `${where}removed` : "skipped";
+  else if (o.kind === "skip") what = c?.kind === "remove" ? `${where}removed` : "skipped";
   else if (o.emote.id !== row.emote.id) what = `seasonal pick: ${o.emote.defaultName}`;
   else what = "copied as-is";
   const status = a?.state === "error" ? `failed: ${a.message}` : a?.state;
@@ -39,10 +45,29 @@ function describe(
 function chipKind(c: Choice | undefined, o: Outcome, inTarget: boolean) {
   if (o.kind === "remove" || o.kind === "skip") return "exclude";
   if (inTarget) return o.kind === "swap" ? "replace" : "mapped";
-  return c && c.kind !== "keep" ? c.kind : "undecided";
+  // No pick on a new emote means it's copied as-is.
+  return c && c.kind !== "keep" ? c.kind : "original";
 }
 
-/** Compact grid of every emote in the mapping, grouped into sections. Press one to jump to it. */
+/**
+ * Row geometry for the virtualized list, in rem like the CSS (the heading's height in globals.css must match).
+ * ListLayout and the scroll-into-view maths work in pixels, so these are converted with the page's root font size.
+ */
+const ROW_REM = 2.25;
+const HEADING_REM = 2.25;
+const GAP_REM = 0.25;
+const PADDING_REM = 0.25;
+
+/** The size of 1rem in pixels (16 unless the user changed their browser's font size). */
+const remInPx = () =>
+  typeof document === "undefined"
+    ? 16
+    : parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+
+/**
+ * Every emote in the mapping, grouped into sections, as a virtualized GridList (sets can have 1000 emotes). Press
+ * a row to jump to it. Keeps the current emote scrolled into view as the user moves through the cards.
+ */
 function MappingOverviewImpl({
   sections,
   current,
@@ -59,60 +84,111 @@ function MappingOverviewImpl({
   applyStates: Record<string, ApplyState>;
   onJump: (index: number) => void;
 }) {
+  const listRef = useRef<HTMLDivElement>(null);
+  const [rem] = useState(remInPx);
+  const ROW = ROW_REM * rem;
+  const HEADING = HEADING_REM * rem;
+  const GAP = GAP_REM * rem;
+  const PADDING = PADDING_REM * rem;
+  // Derived from `sections` only, which the app keeps stable until the rows themselves change.
+  const visible = useMemo(() => sections.filter((section) => section.rows.length > 0), [sections]);
+  const { indexOf, aliasAt } = useMemo(() => {
+    const rows = visible.flatMap((section) => section.rows);
+    return {
+      indexOf: new Map(rows.map(({ row, index }) => [row.alias, index])),
+      aliasAt: new Map(rows.map(({ row, index }) => [index, row.alias])),
+    };
+  }, [visible]);
+  const currentAlias = aliasAt.get(current);
+
+  // Scroll the current row into view. With virtualization it may not be rendered, so first jump to where the
+  // layout puts it (headings and rows have fixed sizes), then let the browser fine-tune once it exists.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list || !currentAlias) return;
+    let y = PADDING;
+    for (const section of visible) {
+      y += HEADING + GAP;
+      const i = section.rows.findIndex((r) => r.row.alias === currentAlias);
+      if (i >= 0) {
+        y += i * (ROW + GAP);
+        break;
+      }
+      y += section.rows.length * (ROW + GAP);
+    }
+    if (y < list.scrollTop || y + ROW > list.scrollTop + list.clientHeight)
+      list.scrollTop = Math.max(0, y - list.clientHeight / 2 + ROW / 2);
+    // Only ever scroll the list itself (scrollIntoView would also scroll the page).
+    requestAnimationFrame(() => {
+      const row = list.querySelector(`[data-key="${CSS.escape(currentAlias)}"]`);
+      if (!row) return;
+      const r = row.getBoundingClientRect();
+      const box = list.getBoundingClientRect();
+      if (r.top < box.top) list.scrollTop -= box.top - r.top;
+      else if (r.bottom > box.bottom) list.scrollTop += r.bottom - box.bottom;
+    });
+    // When the current emote changes, or the rows around it do (a new filter); not on every choice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAlias, visible]);
+
   return (
-    <>
-      {sections.map(
-        (section) =>
-          section.rows.length > 0 && (
-            <div key={section.title} className="overview-section">
-              <h4>
-                {section.title} <span className="muted">({section.rows.length})</span>
-              </h4>
-              <div className="overview">
-                {section.rows.map(({ row, index }) => {
-                  const c = choices[row.alias];
-                  const a = applyStates[row.alias];
-                  const cur = targetEntries[row.alias];
-                  // Unreviewed names stay as they are if they're already in the seasonal set, else get copied.
-                  const o = outcome(row, c ?? (cur ? KEEP : ORIGINAL), cur);
-                  // Every chip reads base → what the seasonal set ends up with (one image when they're the same).
-                  const end = o.kind === "remove" || o.kind === "skip" ? null : o.emote;
-                  return (
-                    <Button
-                      key={row.alias}
-                      className={[
-                        "chip",
-                        index === current ? "current" : "",
-                        chipKind(c, o, !!cur),
-                        a ? `apply-${a.state}` : "",
-                      ].join(" ")}
-                      onPress={() => onJump(index)}
-                      aria-label={`${row.alias}: ${describe(row, c, o, a, !!section.extra)}`}
-                      aria-current={index === current ? "step" : undefined}
-                    >
-                      <Image
-                        src={emoteImage(row.emote.id, 1)}
-                        alt=""
-                        loading="lazy"
-                        index={index}
-                      />
-                      {!end ? (
-                        <span className="arrow">✗</span>
-                      ) : end.id !== row.emote.id ? (
-                        <>
-                          <span className="arrow">→</span>
-                          <Image src={emoteImage(end.id, 1)} alt="" loading="lazy" index={index} />
-                        </>
-                      ) : null}
-                      <span className="chip-name">{row.alias}</span>
-                    </Button>
-                  );
-                })}
-              </div>
-            </div>
-          ),
-      )}
-    </>
+    <Virtualizer
+      layout={ListLayout}
+      layoutOptions={{ rowSize: ROW, headingSize: HEADING, gap: GAP, padding: PADDING }}
+    >
+      <GridList
+        ref={listRef}
+        className="overview"
+        aria-label="All emotes"
+        onAction={(key) => {
+          const i = indexOf.get(String(key));
+          if (i !== undefined) onJump(i);
+        }}
+      >
+        {visible.map((section) => (
+          <GridListSection key={section.title} id={section.title} className="overview-section">
+            <GridListHeader>
+              {section.title}
+              <span className="count">{section.rows.length}</span>
+            </GridListHeader>
+            {section.rows.map(({ row, index }) => {
+              const c = choices[row.alias];
+              const a = applyStates[row.alias];
+              const cur = targetEntries[row.alias];
+              // Names without a pick stay as they are if they're already in the seasonal set, else get copied.
+              const o = outcome(row, c ?? (cur ? KEEP : ORIGINAL), cur);
+              // Every row reads base → what the seasonal set ends up with (one image when they're the same).
+              const end = o.kind === "remove" || o.kind === "skip" ? null : o.emote;
+              return (
+                <GridListItem
+                  key={row.alias}
+                  id={row.alias}
+                  textValue={row.alias}
+                  className={[
+                    "chip",
+                    index === current ? "current" : "",
+                    chipKind(c, o, !!cur),
+                    a ? `apply-${a.state}` : "",
+                  ].join(" ")}
+                  aria-label={`${row.alias}: ${describe(row, c, o, a, !!section.extra)}`}
+                >
+                  <Image src={emoteImage(row.emote.id, 1)} alt="" loading="lazy" index={index} />
+                  {!end ? (
+                    <span className="arrow">✗</span>
+                  ) : end.id !== row.emote.id ? (
+                    <>
+                      <span className="arrow">→</span>
+                      <Image src={emoteImage(end.id, 1)} alt="" loading="lazy" index={index} />
+                    </>
+                  ) : null}
+                  <span className="chip-name">{row.alias}</span>
+                </GridListItem>
+              );
+            })}
+          </GridListSection>
+        ))}
+      </GridList>
+    </Virtualizer>
   );
 }
 

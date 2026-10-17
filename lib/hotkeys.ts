@@ -1,8 +1,9 @@
 /**
- * Every modal and popover in the app uses one of these classes (components/Dialog.tsx, the save modal in
- * App.tsx, SelectField's popover). react-aria only mounts them while open (or animating closed).
+ * Every modal, popover and sheet in the app uses one of these classes (components/Dialog.tsx, the save modal in
+ * App.tsx, SelectField's popover, the emote list sheet). react-aria only mounts them while open (or animating
+ * closed).
  */
-const OVERLAY = ".modal-overlay, .popover";
+const OVERLAY = ".modal-overlay, .popover, .react-aria-SheetOverlay";
 
 /**
  * Whether a global shortcut should leave this key alone: while a modal or popover is open, while typing,
@@ -13,6 +14,8 @@ export function shouldIgnoreKey(e: KeyboardEvent) {
   if (e.metaKey || e.ctrlKey || e.altKey || !t?.closest) return true;
   if (document.querySelector(OVERLAY)) return true;
   if (t.closest("input, textarea")) return true;
+  // The emote list (a GridList) uses arrows, Enter and type-to-find itself.
+  if (t.closest("[role=grid]")) return true;
   // Tabs use the arrow keys (and Home/End) to move between tabs; everything else is free for shortcuts.
   if (/^(Arrow|Home$|End$)/.test(e.key) && t.closest("[role=tab]")) return true;
   if (

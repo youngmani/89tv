@@ -1,24 +1,25 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useEffectEvent } from "react";
 import { Button } from "react-aria-components";
 import { shouldIgnoreKey } from "@/lib/hotkeys";
 import type { Section } from "@/lib/steps";
-import { plural } from "@/lib/util";
 
 /** ← and → step back and forward, when there's somewhere to go. */
 function useArrowKeys(canPrev: boolean, canNext: boolean, onNavigate: (delta: number) => void) {
+  // An effect event always sees the latest props, so the listener is attached once.
+  const onKey = useEffectEvent((e: KeyboardEvent) => {
+    if (shouldIgnoreKey(e)) return;
+    if (e.key === "ArrowLeft" && canPrev) onNavigate(-1);
+    else if (e.key === "ArrowRight" && canNext) onNavigate(1);
+    else return;
+    e.preventDefault();
+  });
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (shouldIgnoreKey(e)) return;
-      if (e.key === "ArrowLeft" && canPrev) onNavigate(-1);
-      else if (e.key === "ArrowRight" && canNext) onNavigate(1);
-      else return;
-      e.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [canNext, canPrev, onNavigate]);
+    const listener = (e: KeyboardEvent) => onKey(e);
+    window.addEventListener("keydown", listener);
+    return () => window.removeEventListener("keydown", listener);
+  }, []);
 }
 
 /**
@@ -29,6 +30,7 @@ function useArrowKeys(canPrev: boolean, canNext: boolean, onNavigate: (delta: nu
 export function MappingSummary({
   section,
   next,
+  isLast,
   multiSection,
   canPrev,
   counts,
@@ -38,17 +40,18 @@ export function MappingSummary({
   canApply,
   applyLabel,
   onApply,
-  onReviewUndecided,
   onNextSection,
   onNavigate,
 }: {
   section: Section;
-  /** The section after this one, if any. */
+  /** The next section with cards to show (taking the filter into account), if any. */
   next: Section | null;
+  /** Whether this is the last section at all (the final "That's everything!"), whatever the filter. */
+  isLast: boolean;
   /** Whether there's more than one section (otherwise this is simply "All done!"). */
   multiSection: boolean;
   canPrev: boolean;
-  counts: { replace: number; original: number; exclude: number; undecided: number };
+  counts: { replace: number; original: number; exclude: number };
   /** Already-mapped emotes the user chose to swap. */
   swapCount: number;
   /** Seasonal-set emotes the user chose to remove. */
@@ -58,21 +61,13 @@ export function MappingSummary({
   canApply: boolean;
   applyLabel: string;
   onApply: () => void;
-  onReviewUndecided: () => void;
   onNextSection: (section: Section) => void;
   onNavigate: (delta: number) => void;
 }) {
-  const everything = !next && multiSection;
+  const everything = isLast && multiSection;
   useArrowKeys(canPrev, !!next, onNavigate);
 
-  const nothing =
-    counts.replace +
-      counts.original +
-      counts.exclude +
-      counts.undecided +
-      swapCount +
-      removeCount ===
-    0;
+  const nothing = counts.replace + counts.original + counts.exclude + swapCount + removeCount === 0;
   const recap = everything
     ? "You've seen every emote in both sets."
     : section === "pending"
@@ -130,15 +125,6 @@ export function MappingSummary({
               · <b>{removeCount}</b> {removeCount === 1 ? "removal" : "removals"}
             </>
           )}
-        </p>
-      )}
-      {section === "pending" && counts.undecided > 0 && (
-        <p className="muted small">
-          {plural(counts.undecided, "emote")} {counts.undecided === 1 ? "is" : "are"} unreviewed and
-          will be copied as-is.{" "}
-          <Button className="link-button" onPress={onReviewUndecided}>
-            Review them
-          </Button>
         </p>
       )}
 

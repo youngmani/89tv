@@ -38,6 +38,10 @@ export interface Services {
   };
   /** Sets to pre-select on the setup form when there's no in-progress mapping. */
   initialSelection?: { sourceId: string; targetId: string };
+  /** How long to pause after each add or remove while saving `total` of them. */
+  changeDelay: (total: number) => number;
+  /** Roughly how long saving `total` adds/removes takes, in ms. */
+  saveTime: (total: number) => number;
 }
 
 export const liveApi: Api = {
@@ -61,6 +65,9 @@ export function createLiveServices(): Services {
       token: { get: () => load<string | null>(TOKEN_KEY, null), set: (v) => save(TOKEN_KEY, v) },
       mapping: { get: loadMapping, set: (v) => (v ? saveMapping(v) : clearMapping()) },
     },
+    // The API client already paces set changes to stay under 7TV's rate limit.
+    changeDelay: () => 0,
+    saveTime: seventv.setChangeTime,
   };
 }
 
