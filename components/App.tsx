@@ -967,7 +967,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           title: `${s.target.name} is too full`,
           body: `This save requires ${plural(slotsNeeded, "open slot")}, but there ${
             free === 1 ? "is only 1 slot" : free === 0 ? "are no slots" : `are only ${free} slots`
-          } remaining. Remove at least ${plural(slotsNeeded - free, "more emote")}, or raise the set's capacity on 7tv.app.`,
+          } remaining. Remove at least ${plural(slotsNeeded - free, "more emote")}, then try again.`,
         });
         return;
       }
