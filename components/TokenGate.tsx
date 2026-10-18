@@ -53,7 +53,6 @@ const Keys = ({ keys }: { keys: string[] }) => (
   </span>
 );
 
-/** How to get to the console for this browser + OS. */
 function OpenConsoleStep({ env }: { env: Env }) {
   if (env.browser === "safari")
     return (
@@ -120,9 +119,7 @@ export function TokenGate({
   // cancelled. So only the latest read counts: an earlier one that finishes later (e.g. once the prompt is finally
   // answered) is ignored, so pressing the button again never logs in twice. A third press while reads are still
   // waiting gives up on the clipboard and shows the token field.
-  /** Numbers each read; only the one matching the latest number is acted on. */
   const pasteAttempt = useRef(0);
-  /** The latest read hasn't finished yet. */
   const pasteWaiting = useRef(false);
   /** Presses that found the previous read still waiting. */
   const stalledPresses = useRef(0);

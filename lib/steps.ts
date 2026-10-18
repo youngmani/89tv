@@ -39,7 +39,6 @@ export function buildSteps(pending: SetEmote[], mapped: SetEmote[], extras: SetE
   });
 }
 
-/** The section a step belongs to. */
 export const stepSection = (s: Step): Section => (s.kind === "done" ? s.section : s.kind);
 
 /** The emote name a step is about, if any. Names are unique across sections. */

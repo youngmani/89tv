@@ -5,9 +5,7 @@ import { Button } from "react-aria-components";
 import { shouldIgnoreKey } from "@/lib/hotkeys";
 import type { Section } from "@/lib/steps";
 
-/** ← and → step back and forward, when there's somewhere to go. */
 function useArrowKeys(canPrev: boolean, canNext: boolean, onNavigate: (delta: number) => void) {
-  // An effect event always sees the latest props, so the listener is attached once.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (shouldIgnoreKey(e)) return;
     if (e.key === "ArrowLeft" && canPrev) onNavigate(-1);
@@ -52,11 +50,8 @@ export function MappingSummary({
   multiSection: boolean;
   canPrev: boolean;
   counts: { replace: number; original: number; exclude: number };
-  /** Already-mapped emotes the user chose to swap. */
   swapCount: number;
-  /** Seasonal-set emotes the user chose to remove. */
   removeCount: number;
-  /** Tab titles, e.g. "Already added". */
   sectionTitle: Record<Section, string>;
   canApply: boolean;
   applyLabel: string;

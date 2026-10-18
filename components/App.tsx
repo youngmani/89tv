@@ -77,7 +77,6 @@ const searchLimit = createLimiter(2);
 const SETTLE_MS = 300;
 /** Saves expected to take at least this long say so before starting; below it, time left is "less than a minute". */
 const LONG_SAVE_MS = 45_000;
-/** "about a minute", "about 10 minutes". */
 const duration = (ms: number) =>
   ms < 90_000 ? "about a minute" : `about ${Math.round(ms / 60_000)} minutes`;
 
@@ -94,9 +93,7 @@ interface Session {
   mapped: SetEmote[];
   /** Target emotes whose name isn't in the source, sorted by alias. Kept unless the user removes them. */
   extras: SetEmote[];
-  /** pending followed by mapped. */
   rows: SetEmote[];
-  /** Everything the user steps through, in order (see lib/steps.ts). */
   steps: Step[];
   tags: string[];
 }
@@ -116,7 +113,6 @@ const tagsFor = (theme: Theme, customTags: string) =>
         .filter(Boolean)
     : [...THEMES[theme].tags];
 
-/** The in-progress mapping as saved to storage: where the user is, their picks, and the swap journal. */
 const toRecord = (
   s: Session,
   choices: Record<string, Choice>,
@@ -147,7 +143,6 @@ const resultKind = (row: SetEmote, o: Outcome): "replace" | "original" | null =>
       ? "original"
       : "replace";
 
-/** What the filters look at: the user's picks, what the target holds, save results, and each row's section. */
 interface FilterState {
   choices: Record<string, Choice>;
   targetEntries: Record<string, SetEmote>;
@@ -156,7 +151,6 @@ interface FilterState {
   extra: Set<string>;
 }
 
-/** Whether filter `f` shows this emote. */
 function rowMatches(row: SetEmote, f: Filter, fs: FilterState): boolean {
   if (f === "all") return true;
   if (f === "errors") return fs.applyStates[row.alias]?.state === "error";
@@ -172,17 +166,13 @@ function rowMatches(row: SetEmote, f: Filter, fs: FilterState): boolean {
   return c?.kind === f;
 }
 
-/** Which steps a filter shows, worked out in one pass so every lookup during render is cheap. */
 interface Visibility {
   /** Per step: matching emotes, and the done card of each section that has any (all of them with no filter). */
   visible: boolean[];
-  /** Sections with at least one matching emote. */
   matching: Set<Section>;
-  /** The first matching emote's step, or null when nothing matches. */
   first: number | null;
   /** Per step: its 1-based place among the visible emotes of its section (0 when hidden or a done card). */
   rank: number[];
-  /** How many emotes each section shows. */
   shown: Record<Section, number>;
 }
 
@@ -203,7 +193,6 @@ function visibilityFor(steps: Step[], f: Filter, fs: FilterState): Visibility {
   return { visible, matching, first: first >= 0 ? first : null, rank, shown };
 }
 
-/** A step of the save modal: a message or confirmation (see DialogOptions), or the progress bar. */
 type SaveDialog =
   | (DialogOptions & { kind?: undefined })
   | { kind: "saving"; confirmLabel?: undefined; dismissable?: undefined };
@@ -226,7 +215,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   );
   /** Set when the user just logged in from the clipboard, so it's wiped once the token checks out. */
   const clearClipboardAfterLogin = useRef(false);
-  /** Shown if wiping the clipboard was blocked by the browser. */
   const [clipboardWarning, setClipboardWarning] = useState(false);
   /** Numbers each account check; a newer check, or signing out, makes an older one stop where it is. */
   const accountCheck = useRef(0);
@@ -248,7 +236,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   /** The pasted base-set link didn't resolve when checked on submit; shown on the link field itself. */
   const [sourceLinkError, setSourceLinkError] = useState<string | null>(null);
 
-  /** Decisions the user has made; emotes without one are copied as the original. */
   const [choices, setChoices] = useState<Record<string, Choice>>({});
   /** The card the user navigated to. The one shown is `index` (below): the same, unless the filter hides it. */
   const [navIndex, setNavIndex] = useState(0);
@@ -259,7 +246,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
    * section a row was loaded into) is what decides whether a name is in the target.
    */
   const [targetEntries, setTargetEntries] = useState<Record<string, SetEmote>>({});
-  /** Records what the target now holds under `alias` (null: nothing). */
   const setTargetEntry = useCallback((alias: string, entry: SetEmote | null) => {
     setTargetEntries((prev) => {
       const next = { ...prev };
@@ -278,11 +264,9 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   const [applying, setApplying] = useState(false);
   /** Names changed by the latest save (adds, swaps and removals), for the progress bar. */
   const [run, setRun] = useState<string[] | null>(null);
-  /** Roughly how long the save in progress takes in all, in ms. */
   /** Estimated time left on the save in progress, in ms; re-estimated from the actual pace after each change. */
   const [runLeft, setRunLeft] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
-  /** The emote list as a drawer, on screens too narrow for the sidebar. */
   const [listOpen, setListOpen] = useState(false);
   /**
    * Whether the drawer was opened by touch. Only touch can swipe it away (a drag is a scroll), so that shows the
@@ -291,10 +275,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   const [listByTouch, setListByTouch] = useState(false);
   const [pause, setPause] = useState<{ bucket: string; seconds: number } | null>(null);
 
-  /**
-   * The save modal: one modal for the whole save (confirm, progress, result) that stays open and swaps its
-   * content, rather than a modal per step animating in and out.
-   */
+  /** The save modal: one modal for the whole save (confirm, progress, result) that swaps its content. */
   const [saveDialog, setSaveDialog] = useState<SaveDialog | null>(null);
   const saveAnswer = useRef<((ok: boolean) => void) | null>(null);
   /** Shows a step with buttons and waits for one (or for a dismiss, which counts as false). */
@@ -315,7 +296,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   const searchControllers = useRef(new Map<string, AbortController>());
   const { dialog, ask } = useDialog();
 
-  // Countdown shown while a rate limit has paused requests.
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
     const off = onRateLimitPause((bucket, until) => {
@@ -416,7 +396,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       }));
       // The base emote is already offered as its own tile. Emotes 7TV won't add to the target (deleted ones,
       // and private ones unless the target's owner uploaded them) are dropped (and counted) rather than offered.
-      // In practice private emotes only come from a pasted link: 7TV's search leaves them out.
       const usable = (found: SearchResult[]) => {
         const others = found.filter((e) => e.id !== row.emote.id);
         const items = others.filter((e) => canAddTo(e, s.target.ownerId));
@@ -659,7 +638,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     [steps],
   );
   const rowAtStep = useCallback((i: number) => stepRow(steps[i]), [steps]);
-  /** Sections with emotes in them, in order (each is a tab). */
   const sections = useMemo(() => [...new Set(steps.map(stepSection))], [steps]);
   const mappedAliases = useMemo(
     () => new Set((session?.mapped ?? []).map((r) => r.alias)),
@@ -671,9 +649,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   /** Names not in the target yet default to the original; names already in it default to staying as-is. */
   const choiceOf = (alias: string): Choice =>
     choices[alias] ?? (targetEntries[alias] ? KEEP : ORIGINAL);
-  /** What saving does with this row (see outcome() in lib/mapping.ts). */
   const outcomeOf = (row: SetEmote) => outcome(row, choiceOf(row.alias), targetEntries[row.alias]);
-  /** The emote this row ends up as in the target (null = removed or not copied). */
   const finalEmote = (row: SetEmote): EmoteSummary | null => {
     const o = outcomeOf(row);
     return o.kind === "remove" || o.kind === "skip" ? null : o.emote;
@@ -701,7 +677,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   );
   const isStepVisible = (i: number) => visibility.visible[i] ?? false;
   const matchingSections = visibility.matching;
-  /** Nothing matches the filter: the card area shows an empty state, like the list does. */
   const noMatches = filter !== "all" && visibility.first === null;
   /** The card on screen: the one the user navigated to, or the start of the list if the filter hides that one. */
   const index = isStepVisible(navIndex) ? navIndex : (visibility.first ?? navIndex);
@@ -736,11 +711,9 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     [runSearch],
   );
 
-  // Search the emote on screen, then preload the next one (results + images) so stepping forward is instant.
-  // While the user is flicking through cards (e.g. holding an arrow key), nothing is searched until they stop on
-  // one for SETTLE_MS, so cards they only pass over don't use up the search quota. Searches are also paced to
-  // stay under 7TV's limit (lib/seventv.ts): when no slot is free, the card's search waits for one (spinner
-  // showing) and is never sent if the user has moved on. Preloading only happens while a slot is spare.
+  // Search the emote on screen, then preload the next one so stepping forward is instant. To save search quota,
+  // nothing is searched while the user flicks through cards (less than SETTLE_MS apart) or while the search
+  // pacer has no free slot, and nothing is sent for a card the user has already left.
   const lastCardChange = useRef(0);
   useEffect(() => {
     if (!session) return;
@@ -773,12 +746,10 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     };
   }, [session, current, index, rowAtStep, ensureSearch]);
 
-  /** The nearest step in a direction that `visible` allows, or null. */
   const findVisible = (from: number, dir: 1 | -1, visible: (i: number) => boolean) => {
     for (let i = from + dir; i >= 0 && i < stepCount; i += dir) if (visible(i)) return i;
     return null;
   };
-  /** Moves to a card, and remembers it as the user's place in its section. */
   const go = useCallback(
     (i: number) => {
       setNavIndex(i);
@@ -787,7 +758,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     },
     [steps],
   );
-  /** Steps through the cards the filter shows, from the one on screen. */
   const navigate = (delta: number) => {
     const dir = delta < 0 ? -1 : 1;
     let at = index;
@@ -816,7 +786,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     if (to !== null) go(to);
   };
 
-  /** Shows a card even if the filter hides it, by turning the filter off. */
   const goShowing = (i: number) => {
     if (!isStepVisible(i)) setFilter("all");
     go(i);
@@ -832,7 +801,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     setFilter(next);
   };
   const workspaceMain = useRef<HTMLDivElement>(null);
-  /** Picking an emote in the list: show it in the card, and bring the card back into view if it's scrolled away. */
   const jumpFromList = useCallback(
     (i: number) => {
       go(i);
@@ -845,7 +813,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     },
     [go],
   );
-  /** Back to where the user last was in a section, or its first card the filter shows. */
   const goToSection = (to: Section) => {
     const last = lastInSection.current[to];
     const i =
@@ -860,7 +827,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   const allRows = useMemo(() => [...rows, ...extras], [rows, extras]);
   const plan = allRows.filter((r) => outcomeOf(r).kind === "add");
   const swaps = allRows.filter(isSwap);
-  /** The target entries the user chose to remove (whatever the target holds under that name now). */
   const removalEntries = (rs: SetEmote[]): SetEmote[] =>
     rs.flatMap((r) => (outcomeOf(r).kind === "remove" ? [targetEntries[r.alias]] : []));
   const removals = removalEntries(allRows);
@@ -1042,7 +1008,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       setSaveDialog({ kind: "saving" });
       setApplying(true);
       setRunLeft(estimate);
-      /** Pause after each change (see Services.changeDelay). */
       const gap = changeDelay(requestCount);
       // Time left: the expected time per request, or the pace so far if 7TV is slower than that (a slow API, or a
       // rate-limit pause). The first requests go out in a quick burst, so the expected pace is a floor.
@@ -1304,7 +1269,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         : `Save ${plural(changeCount, "change")}`;
   // Mid-save the journal holds the swap in flight, which isn't an interruption.
   const interrupted = applying ? [] : Object.keys(removed);
-  /** Finished (or failed) changes from the latest save; ones skipped by Stop never leave "queued". */
   const runDone =
     run?.filter((a) => !["queued", "running"].includes(applyStates[a]?.state ?? "queued")).length ??
     0;
@@ -1314,7 +1278,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       ? "Less than a minute left"
       : `${duration(runLeft).replace(/^a/, "A")} left`;
 
-  /** The filter and every emote by section; shown as the sidebar, or in the drawer on narrow screens. */
   const filterSelect = (
     <SelectField
       aria-label="Filter emotes"
@@ -1341,7 +1304,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     </>
   );
 
-  /** The card for the current step. */
   const card = !session ? null : noMatches ? (
     <section className="card focus empty-state" aria-label="No matching emotes">
       <div className="summary-emoji" aria-hidden>

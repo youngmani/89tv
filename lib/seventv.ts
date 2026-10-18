@@ -15,22 +15,18 @@ export class ApiError extends Error {
   }
 }
 
-// 7TV rate limits per bucket (e.g. "search": 100 per window, "global"). When a bucket is exhausted the API
-// answers HTTP 200 with a RATE_LIMIT_EXCEEDED GraphQL error whose extensions.headers carry
-// x-ratelimit-<bucket>-reset. Requests in that bucket then wait out the reset instead of retrying — 7TV
-// escalates to much longer blocks for clients that keep hammering after being limited.
-// Bucket names match the API's header names (x-ratelimit-<bucket>-reset). Adds use "emote_set_change".
+// 7TV rate-limits requests per bucket (named as in its x-ratelimit-<bucket>-* headers). Over a limit it answers
+// HTTP 200 with a RATE_LIMIT_EXCEEDED error carrying the reset time, and retrying before then only extends the
+// block, so the whole bucket pauses until the reset.
 export type Bucket = "search" | "emote_set_change" | "global";
 const pausedUntil: Record<string, number> = {};
 const pauseListeners = new Set<(bucket: string, until: number) => void>();
 
-/** Subscribe to rate-limit pauses; the callback gets the bucket and the epoch ms when it resumes. */
 export function onRateLimitPause(cb: (bucket: string, until: number) => void) {
   pauseListeners.add(cb);
   return () => void pauseListeners.delete(cb);
 }
 
-/** Records the pause and returns when the limited bucket resumes. */
 function pauseFrom(headers: Record<string, string> | undefined, fallbackBucket: string): number {
   const [key, value] = Object.entries(headers ?? {}).find(([k]) => k.endsWith("-reset")) ?? [];
   const bucket = key?.match(/^x-ratelimit-(.+)-reset$/)?.[1] ?? fallbackBucket;
@@ -43,11 +39,8 @@ function pauseFrom(headers: Record<string, string> | undefined, fallbackBucket: 
   return pausedUntil[bucket];
 }
 
-// Both buckets we use allow 100 requests per 60s, counted in fixed windows we can't see the start of. Rejected
-// requests count too, so it's much better to never hit the limit than to wait it out. Requests are paced on
-// our side: at most PACE_BURST in any PACE_BURST × 60s / PACE_LIMIT (a quick burst, then a steady ~0.63s apart).
-// That keeps every 60s window, wherever it starts, at PACE_LIMIT or fewer (a little under 7TV's 100, to leave
-// room for 7tv.app open in another tab).
+// Searches and set changes are each limited to 100 per 60s, so they're paced to never hit the limit: at most
+// PACE_BURST in any PACE_BURST × 60s / PACE_LIMIT, which keeps any 60s window at PACE_LIMIT or fewer.
 const PACE_LIMIT = 95;
 const PACE_BURST = 10;
 const PACE_PERIOD_MS = (PACE_BURST * 60_000) / PACE_LIMIT;
@@ -62,7 +55,6 @@ class Pacer {
     readonly period: number,
   ) {}
 
-  /** How long until a request could start (0 if one could start now). */
   wait(now = Date.now()) {
     while (this.starts.length && this.starts[0] <= now - this.period) this.starts.shift();
     return this.starts.length < this.burst
@@ -70,7 +62,6 @@ class Pacer {
       : this.starts[this.starts.length - this.burst] + this.period - now;
   }
 
-  /** How many requests could start right now. */
   free(now = Date.now()) {
     this.wait(now);
     return this.burst - this.starts.length;
@@ -93,14 +84,10 @@ const pacers: Partial<Record<Bucket, Pacer>> = {
   emote_set_change: new Pacer(PACE_BURST, PACE_PERIOD_MS),
 };
 
-/** How many searches could go out right now without waiting. */
 export const freeSearches = () => pacers.search!.free();
-/** How long until a search could go out (0 if it could now). */
 export const searchWait = () => pacers.search!.wait();
 
-/** Roughly how long a request takes, for estimates. */
 const TYPICAL_REQUEST_MS = 300;
-/** Roughly how long `n` adds/removes take, given the pacing above. */
 export function setChangeTime(n: number) {
   const pacer = pacers.emote_set_change!;
   return Math.max(n * TYPICAL_REQUEST_MS, ((n - pacer.burst) * pacer.period) / pacer.burst);
@@ -192,7 +179,6 @@ export interface EmoteSetInfo {
   id: string;
   name: string;
   capacity: number | null;
-  /** The owning user's ID (null for sets without an owner). */
   ownerId: string | null;
   owner: { mainConnection: { platformDisplayName: string } | null } | null;
   emotes: { totalCount: number };
@@ -279,7 +265,6 @@ export async function fetchSetInfo(
   return d.emoteSets.emoteSet;
 }
 
-/** Fetches every emote in a set, following pagination. */
 export async function fetchSetEmotes(id: string, token?: string | null): Promise<SetEmote[]> {
   const perPage = 500;
   const all: SetEmote[] = [];
@@ -328,10 +313,6 @@ const withInTarget = ({ inEmoteSets, ...e }: EmoteWithSets): SearchResult => ({
 const setIdsFor = (targetSetId: string | undefined) =>
   targetSetId ? [targetSetId] : ["00000000000000000000000000"];
 
-// Note: windowed sorts (TRENDING_*, TOP_MONTHLY) also filter, returning only emotes with activity in that
-// window (e.g. "catJAM" + halloween: 1 result trending vs 6 all-time). That's intended.
-// Same field the 7tv.app website's own EmoteSearch operation uses (emotes.search), including its
-// inEmoteSets trick for showing which results are already in a set.
 export async function searchEmotes(
   p: SearchParams,
   token?: string | null,

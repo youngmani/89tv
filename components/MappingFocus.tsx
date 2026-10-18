@@ -127,17 +127,14 @@ export function MappingFocus({
   position: string;
   canPrev: boolean;
   canNext: boolean;
-  /** What the target holds under this name, when the emote is already mapped. */
   inTarget: SetEmote | undefined;
   /** False for an emote only in the seasonal set: `source` is then its seasonal-set entry, and there's no base. */
   inBase?: boolean;
   /** The emote that held this name before a swap that was interrupted (page closed mid-swap). */
   previous: RemovedEntry | undefined;
-  /** The theme's tags, for labelling the tag filter. */
   tags: string[];
   choice: Choice;
   search: SearchState | undefined;
-  /** Result of the last attempt to add or swap this emote, if any. */
   apply: ApplyState | undefined;
   /** The mapping's sort; each emote can override it. */
   defaultSort: SortBy;
@@ -170,13 +167,11 @@ export function MappingFocus({
     [search, current, previous],
   );
 
-  // An effect event always sees the latest props, so the listener is attached once rather than on every change.
   const onKey = useEffectEvent((e: KeyboardEvent) => {
     if (shouldIgnoreKey(e)) return;
     if (e.key === "ArrowLeft") onNavigate(-1);
     else if (e.key === "ArrowRight" || e.key === "Enter") onNavigate(1);
     else if (e.key === "0") onChoose(baseline, true);
-    // X: skip (not in the seasonal set yet) or remove (already in it).
     else if (e.key.toLowerCase() === "x") onChoose({ kind: mapped ? "remove" : "exclude" }, true);
     else if (/^[1-9]$/.test(e.key) && !loading && items[Number(e.key) - 1])
       onChoose({ kind: "replace", emote: items[Number(e.key) - 1] }, true);

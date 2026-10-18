@@ -21,7 +21,6 @@ export interface SelectItem {
   isDisabled?: boolean;
 }
 
-/** Labelled react-aria Select with a popover list box. */
 export function SelectField({
   label,
   items,
@@ -100,7 +99,6 @@ export function Spinner({
   );
 }
 
-/** Full-width "please wait" card for states where there's nothing the user can do yet. */
 export function LoadingCard({ message }: { message: string }) {
   return (
     <section className="card narrow center loading-card">

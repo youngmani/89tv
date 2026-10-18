@@ -18,7 +18,6 @@ interface Row {
   index: number;
 }
 
-/** The screen-reader description of a chip. */
 function describe(
   row: SetEmote,
   c: Choice | undefined,

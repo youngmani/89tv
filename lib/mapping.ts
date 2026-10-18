@@ -14,7 +14,6 @@ export type Choice =
   | { kind: "keep" }
   | { kind: "remove" };
 
-/** Options for one emote search; each emote can tweak these independently. */
 export interface SearchOptions {
   /** What's in the search box. Blank means "the emote's own name"; an emote link or ID is looked up directly. */
   input: string;
@@ -112,7 +111,6 @@ export const DEFAULT_SORT: SortBy = "TOP_ALL_TIME";
 
 // ---------- The in-progress mapping ----------
 
-/** What the user picked on the setup form. */
 export interface MappingParams {
   sourceId: string;
   targetId: string;
@@ -121,7 +119,6 @@ export interface MappingParams {
   sortBy: SortBy;
 }
 
-/** Just the setup-form fields of a saved mapping (or anything else that has them). */
 export const mappingParams = ({
   sourceId,
   targetId,

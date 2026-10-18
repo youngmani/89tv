@@ -23,7 +23,6 @@ export interface Api {
   removeEmoteFromSet: typeof seventv.removeEmoteFromSet;
 }
 
-/** One persisted value. */
 export interface Slot<T> {
   get(): T | null;
   set(value: T | null): void;

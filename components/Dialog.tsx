@@ -87,7 +87,6 @@ export function ModalShell({
   );
 }
 
-/** A dialog's title, body and buttons; goes inside react-aria's <Dialog>. */
 export function DialogContent({
   title,
   body,

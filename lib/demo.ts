@@ -26,7 +26,6 @@ const OWNER = "youngmani";
 /** The demo account's user ID; it owns every demo set. */
 const OWNER_ID = "DEMO";
 export const DEMO_BASE_ID = "DEMOBASE000000000000000000";
-/** Fake set IDs for the seasonal sets, in seed order. */
 const demoSeasonalId = (i: number) => `DEMOSEASONAL${String(i).padStart(14, "0")}`;
 
 /**
@@ -140,7 +139,6 @@ const demoPerChange = (total: number) => Math.min(CHANGE_MS, SAVE_BUDGET_MS / Ma
  */
 export function createDemoServices(seed: DemoSeed = DEMO_SEED): Services {
   const store = new DemoStore(seed);
-  /** Time per change for the save in progress (set by changeDelay when a save starts). */
   let perChange = CHANGE_MS;
   /** A little latency so saving looks like saving: about 60% of each change's time, with some jitter. */
   const latency = () => sleep(perChange * (0.35 + Math.random() * 0.5));
