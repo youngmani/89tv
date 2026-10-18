@@ -28,14 +28,15 @@ export function buildSteps(pending: SetEmote[], mapped: SetEmote[], extras: SetE
   ).filter(([, rows]) => rows.length > 0);
   // Nothing in either set still gets a done step, so there's always something to show.
   if (!sections.length) return [{ kind: "done", section: "pending", next: null }];
-  return sections.flatMap(([section, rows], i): Step[] => [
-    ...rows.map((row, j): Step =>
+  return sections.flatMap(([section, rows], i): Step[] => {
+    const steps = rows.map((row, j): Step =>
       section === "extra"
         ? { kind: "extra", entry: row, n: j + 1, of: rows.length }
         : { kind: section, row, n: j + 1, of: rows.length },
-    ),
-    { kind: "done", section, next: sections[i + 1]?.[0] ?? null },
-  ]);
+    );
+    steps.push({ kind: "done", section, next: sections[i + 1]?.[0] ?? null });
+    return steps;
+  });
 }
 
 /** The section a step belongs to. */

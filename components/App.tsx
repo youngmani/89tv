@@ -645,6 +645,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     setHydrated(true);
     if (savedToken) void checkAccount(savedToken, saved);
   });
+  // Setting state here is intended: storage only exists in the browser, so it's read once hydration is done.
+  // eslint-disable-next-line react/set-state-in-effect
   useEffect(() => bootstrap(), []);
 
   const pending = useMemo(() => session?.pending ?? [], [session]);
