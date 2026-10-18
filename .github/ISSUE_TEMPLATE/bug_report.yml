@@ -1,0 +1,33 @@
+name: Bug report
+description: Something in 89TV isn't working right.
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Never paste your 7TV token** here, in screenshots, or in console output.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What went wrong, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we make it happen again? Links to the emote sets involved help a lot.
+      placeholder: |
+        1. Pick https://7tv.app/emote-sets/… as the base set
+        2. …
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device
+      placeholder: e.g. Chrome (Version 155) on Windows, Safari on iPhone (iOS 27.2)
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, error messages, or anything else that might help.
