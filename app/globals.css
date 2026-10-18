@@ -120,6 +120,19 @@ main {
   font-size: 0.8125rem;
   color: var(--muted);
 }
+.github-link {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 0.625rem;
+  color: var(--muted);
+  &[data-hovered] {
+    color: var(--text);
+  }
+  svg {
+    width: 1rem;
+    height: 1rem;
+  }
+}
 h1,
 h2,
 h3 {
@@ -213,6 +226,11 @@ img {
 [data-focus-visible] {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+/* Select and Checkbox mark their whole wrapper as focus-visible too; only the control itself gets the ring. */
+.field[data-focus-visible],
+.checkbox[data-focus-visible] {
+  outline: none;
 }
 
 /* ---------- Header ---------- */
@@ -1355,6 +1373,9 @@ main:has(.workspace) {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Room inside the scroll box for a tile's focus ring (2px outline, 2px offset), without moving anything. */
+  padding: 0.25rem;
+  margin: -0.25rem;
 }
 /* Shown instead of a card when nothing matches the list's filter. */
 .empty-state {
