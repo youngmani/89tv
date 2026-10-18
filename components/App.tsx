@@ -75,7 +75,7 @@ type Filter = "all" | "replace" | "original" | "exclude" | "changed" | "remove" 
 const searchLimit = createLimiter(2);
 /** Cards shown less than this apart count as flicking through: searching waits until the user stops this long. */
 const SETTLE_MS = 300;
-/** Saves at least this long mention how long they take. */
+/** Saves expected to take at least this long say so before starting; below it, time left is "less than a minute". */
 const LONG_SAVE_MS = 45_000;
 /** "about a minute", "about 10 minutes". */
 const duration = (ms: number) =>
@@ -279,7 +279,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   /** Names changed by the latest save (adds, swaps and removals), for the progress bar. */
   const [run, setRun] = useState<string[] | null>(null);
   /** Roughly how long the save in progress takes in all, in ms. */
-  const [runTime, setRunTime] = useState(0);
+  /** Estimated time left on the save in progress, in ms; re-estimated from the actual pace after each change. */
+  const [runLeft, setRunLeft] = useState(0);
   const [filter, setFilter] = useState<Filter>("all");
   /** The emote list as a drawer, on screens too narrow for the sidebar. */
   const [listOpen, setListOpen] = useState(false);
@@ -349,7 +350,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     setSearches({});
     setApplyStates({});
     setRun(null);
-    setRunTime(0);
+    setRunLeft(0);
     setSaveDialog(null);
     setFilter("all");
     setListOpen(false);
@@ -1005,8 +1006,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
 
       const replaced = toAdd.filter((r) => choiceOf(r.alias).kind === "replace").length;
       /** Adds and removes to send: a swap is one of each. */
-      const changeCount = toRemove.length + toAdd.length + 2 * toSwap.length;
-      const estimate = saveTime(changeCount);
+      const requestCount = toRemove.length + toAdd.length + 2 * toSwap.length;
+      const estimate = saveTime(requestCount);
       const ok = await saveStep({
         title: `Save to ${s.target.name}?`,
         body: (
@@ -1038,9 +1039,19 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
 
       setSaveDialog({ kind: "saving" });
       setApplying(true);
-      setRunTime(saveTime(changeCount));
+      setRunLeft(estimate);
       /** Pause after each change (see Services.changeDelay). */
-      const gap = changeDelay(changeCount);
+      const gap = changeDelay(requestCount);
+      // Time left: the expected time per request, or the pace so far if 7TV is slower than that (a slow API, or a
+      // rate-limit pause). The first requests go out in a quick burst, so the expected pace is a floor.
+      const started = Date.now();
+      const expectedPerRequest = estimate / Math.max(1, requestCount);
+      let requestsDone = 0;
+      const progressed = (requests: number) => {
+        requestsDone += requests;
+        const pace = Math.max(expectedPerRequest, (Date.now() - started) / requestsDone);
+        setRunLeft(pace * Math.max(0, requestCount - requestsDone));
+      };
       setRun([...toRemove, ...toAdd, ...toSwap].map((r) => r.alias));
       setApplyStates((prev) => {
         const next = { ...prev };
@@ -1076,6 +1087,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         } catch (e) {
           if (fail(entry, e)) break;
         }
+        progressed(1);
         await sleep(gap);
       }
 
@@ -1100,6 +1112,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         } catch (e) {
           if (fail(row, e)) break;
         }
+        progressed(1);
         await sleep(gap);
       }
 
@@ -1115,6 +1128,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         } catch (e) {
           journal(s, row.alias, null);
           if (fail(row, e, " Nothing was changed.")) break;
+          progressed(2);
           continue;
         }
         try {
@@ -1151,6 +1165,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
             : ` The previous emote (${cur.emote.defaultName}) could not be restored. Save again to retry.`;
           if (fail(row, e, suffix)) break;
         }
+        progressed(2);
         await sleep(gap);
       }
 
@@ -1291,14 +1306,11 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   const runDone =
     run?.filter((a) => !["queued", "running"].includes(applyStates[a]?.state ?? "queued")).length ??
     0;
-  /** Rough time left on a long save, e.g. "About 3 minutes left" (null for short saves). */
-  const runLeft = run?.length ? runTime * (1 - runDone / run.length) : 0;
+  /** Rough time left on the save in progress, e.g. "About 3 minutes left". Always shown, so it never pops in. */
   const timeLeft =
-    runTime < LONG_SAVE_MS
-      ? null
-      : runLeft < LONG_SAVE_MS
-        ? "Less than a minute left"
-        : `${duration(runLeft).replace(/^a/, "A")} left`;
+    runLeft < LONG_SAVE_MS
+      ? "Less than a minute left"
+      : `${duration(runLeft).replace(/^a/, "A")} left`;
 
   /** The filter and every emote by section; shown as the sidebar, or in the drawer on narrow screens. */
   const filterSelect = (
@@ -1451,7 +1463,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                   </>
                 )}
               </ProgressBar>
-              {timeLeft && <p className="muted small time-left">{timeLeft}</p>}
+              <p className="muted small time-left">{timeLeft}</p>
               {pause && pause.bucket !== "search" && (
                 <p className="notice small">
                   Rate limit exceeded. Trying again in {pause.seconds}s.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button, Form, Input, Label, Link, TextField } from "react-aria-components";
 
 // Copies the token without printing it: copy() returns undefined, so the console only shows "undefined".
@@ -111,13 +111,43 @@ export function TokenGate({
     onToken(t);
   };
 
+  const showManual = () => {
+    setManual(true);
+    setProblem("Unable to access the clipboard. Paste the token below.");
+  };
+
+  // Reading the clipboard can wait forever on a permission prompt the user never sees, and the read can't be
+  // cancelled. So only the latest read counts: an earlier one that finishes later (e.g. once the prompt is finally
+  // answered) is ignored, so pressing the button again never logs in twice. A third press while reads are still
+  // waiting gives up on the clipboard and shows the token field.
+  /** Numbers each read; only the one matching the latest number is acted on. */
+  const pasteAttempt = useRef(0);
+  /** The latest read hasn't finished yet. */
+  const pasteWaiting = useRef(false);
+  /** Presses that found the previous read still waiting. */
+  const stalledPresses = useRef(0);
+
   const pasteAndLogIn = async () => {
-    try {
-      submit(await navigator.clipboard.readText());
-    } catch {
-      setManual(true);
-      setProblem("Unable to access the clipboard. Paste the token below.");
+    if (pasteWaiting.current && ++stalledPresses.current >= 2) {
+      pasteAttempt.current++; // drop the waiting read
+      pasteWaiting.current = false;
+      stalledPresses.current = 0;
+      showManual();
+      return;
     }
+    const attempt = ++pasteAttempt.current;
+    pasteWaiting.current = true;
+    let text: string | null = null;
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      // Handled below, if this is still the latest read.
+    }
+    if (attempt !== pasteAttempt.current) return;
+    pasteWaiting.current = false;
+    stalledPresses.current = 0;
+    if (text === null) showManual();
+    else submit(text);
   };
 
   return (

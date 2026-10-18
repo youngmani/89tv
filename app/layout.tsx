@@ -13,23 +13,26 @@ const nunito = Nunito({ subsets: ["latin"], variable: "--font-nunito" });
 export const viewport: Viewport = { colorScheme: "dark" };
 
 const description = "Make Halloween and Christmas versions of your 7TV emote set.";
+/** Every title ends with the words people search for: "89TV · …" at home, "Demo · 89TV · …" on other pages. */
+const tagline = "Halloween and Christmas 7TV emote sets";
+const title = `89TV · ${tagline}`;
 
 // Social previews (Open Graph, X/Twitter) use app/opengraph-image.png; Next adds its tags and absolute URL.
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: "89TV", template: "%s · 89TV" },
+  title: { default: title, template: `%s · ${title}` },
   description,
   applicationName: "89TV",
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
     siteName: "89TV",
-    title: "89TV",
+    title,
     description,
     url: "/",
     locale: "en_US",
   },
-  twitter: { card: "summary_large_image", title: "89TV", description },
+  twitter: { card: "summary_large_image", title, description },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -5,12 +5,12 @@ const OG_IMAGE = {
   url: "/opengraph-image.png",
   width: 1200,
   height: 630,
-  alt: "89TV: Make a seasonal copy of your 7TV emote set",
+  alt: "89TV · Make a seasonal copy of your 7TV emote set",
 };
 
 // The demo page is a client component, so its metadata lives here.
 const description =
-  "Try 89TV with a sample emote set: no 7TV account needed, and nothing is saved.";
+  "Try 89TV without logging in. Make Halloween and Christmas versions of a sample 7TV emote set.";
 
 export const metadata: Metadata = {
   title: "Demo",
