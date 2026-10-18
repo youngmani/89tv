@@ -1,6 +1,7 @@
 name: Bug report
-description: Something in 89TV isn't working right.
+description: Something in 89TV isn't working right
 type: Bug
+labels: ["bug"]
 body:
   - type: markdown
     attributes:
