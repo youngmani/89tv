@@ -27,7 +27,9 @@ export function Image({
   // positive delay would leave the image unanimated until it kicks in.
   const delay = ((index * STAGGER_MS) % CYCLE_MS) - CYCLE_MS;
   return (
+    // A new element per src: an <img> keeps showing its old picture until the new one has loaded.
     <img
+      key={src}
       {...props}
       src={src}
       alt={alt}

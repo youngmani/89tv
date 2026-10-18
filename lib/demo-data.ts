@@ -11,6 +11,58 @@ export const DEMO_SEED: DemoSeed = {
     capacity: 1000,
     emotes: [
       {
+        alias: "!claim",
+        zeroWidth: false,
+        emote: {
+          id: "01FYWNCE7G000BHTYM8E1XMV40",
+          defaultName: "dumbass",
+          deleted: false,
+          tags: [],
+          flags: { animated: false, defaultZeroWidth: false, private: false },
+          ownerId: "01F6ZHDWWR000DP81XYZ6HXZ57",
+          owner: { mainConnection: { platformDisplayName: "Blu3Smok3" } },
+        },
+      },
+      {
+        alias: "Chatting",
+        zeroWidth: false,
+        emote: {
+          id: "01FAK9C8MR0004HKF2ZK1YPQ5A",
+          defaultName: "Chatting",
+          deleted: false,
+          tags: [],
+          flags: { animated: true, defaultZeroWidth: false, private: false },
+          ownerId: "01F6W7WSGG0007WR3JGSXWV2WT",
+          owner: { mainConnection: { platformDisplayName: "smc5" } },
+        },
+      },
+      {
+        alias: "Cooked",
+        zeroWidth: false,
+        emote: {
+          id: "01JJ0D0C2XWZ640NP4WJKB8MYX",
+          defaultName: "Cooked",
+          deleted: false,
+          tags: ["wyay", "dn9n", "ome", "xqc", "flight", "forsen"],
+          flags: { animated: false, defaultZeroWidth: false, private: false },
+          ownerId: "01FEAXPYGG000DE2NEK152WEWA",
+          owner: { mainConnection: { platformDisplayName: "onzuu" } },
+        },
+      },
+      {
+        alias: "Hmm",
+        zeroWidth: false,
+        emote: {
+          id: "01F6MA6Y100002B6P5MWZ5D916",
+          defaultName: "Hmm",
+          deleted: false,
+          tags: [],
+          flags: { animated: false, defaultZeroWidth: false, private: false },
+          ownerId: "01F38QW5W8000AG1XYT0315MFE",
+          owner: { mainConnection: { platformDisplayName: "LNSc" } },
+        },
+      },
+      {
         alias: "LOL",
         zeroWidth: false,
         emote: {
@@ -83,16 +135,42 @@ export const DEMO_SEED: DemoSeed = {
       capacity: 1000,
       emotes: [
         {
-          alias: "LOL",
+          alias: "Chatting",
           zeroWidth: false,
           emote: {
-            id: "01K5HWC3JPGCSTBS3Q01BX3DAW",
-            defaultName: "LOL",
+            id: "01GDEKA3VG00024RGDR8VKPA5K",
+            defaultName: "Chatting",
             deleted: false,
-            tags: ["halloween", "minions", "lol"],
+            tags: ["chatting", "pumpkin", "halloween"],
             flags: { animated: true, defaultZeroWidth: false, private: false },
-            ownerId: "01HPJNS3NR0000WH1HT606SPPM",
-            owner: { mainConnection: { platformDisplayName: "Tech_Taylor" } },
+            ownerId: "01FD96TQ400009ZAD9VPCVD96V",
+            owner: { mainConnection: { platformDisplayName: "grimsalad" } },
+          },
+        },
+        {
+          alias: "Hmm",
+          zeroWidth: false,
+          emote: {
+            id: "01GE9PHHR80006MCY6R6BPT8G6",
+            defaultName: "Hmm",
+            deleted: false,
+            tags: ["hmm", "hmmm"],
+            flags: { animated: false, defaultZeroWidth: false, private: false },
+            ownerId: "01F7AE8B4G0004PHWER2HJK2ST",
+            owner: { mainConnection: { platformDisplayName: "Dekyrot" } },
+          },
+        },
+        {
+          alias: "Pepega",
+          zeroWidth: false,
+          emote: {
+            id: "01GEYG0AC00007VKAEFZEJMGFK",
+            defaultName: "Pepega",
+            deleted: false,
+            tags: ["spooky", "zombie", "pepege", "halloween", "october", "halloween2022"],
+            flags: { animated: false, defaultZeroWidth: false, private: false },
+            ownerId: "01FPB6Y380000FZADBM40VTJNA",
+            owner: { mainConnection: { platformDisplayName: "ketchungus" } },
           },
         },
         {
