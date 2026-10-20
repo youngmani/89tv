@@ -192,6 +192,9 @@ img {
 picture {
   display: contents;
 }
+picture > source {
+  display: none;
+}
 .img-loading.emote-preview {
   animation: none;
   background-color: transparent;
