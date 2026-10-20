@@ -1,8 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { Button, Form, Input, Label, Link, TextField } from "react-aria-components";
+import { Button, Form, Input, Label, TextField } from "react-aria-components";
+import { Link } from "@/components/Link";
 
 // Copies the token without printing it: copy() returns undefined, so the console only shows "undefined".
 // Pasting the whole line at once also avoids DevTools' eager-evaluation preview, which would show the
@@ -94,9 +94,6 @@ export function TokenGate({
   const [value, setValue] = useState("");
   // This component only renders client-side (the page waits for hydration), so sniffing here is safe.
   const [env] = useState(detectEnv);
-  const router = useRouter();
-  /** /demo is only prefetched when the user shows interest (hover or keyboard focus), not up front. */
-  const prefetchDemo = () => router.prefetch("/demo");
 
   const submit = (raw: string) => {
     const t = cleanToken(raw);
@@ -236,10 +233,7 @@ export function TokenGate({
         )}
       </section>
       <p className="demo-link">
-        Just looking?{" "}
-        <Link href="/demo" onHoverStart={prefetchDemo} onFocus={prefetchDemo}>
-          Try the demo
-        </Link>
+        Just looking? <Link href="/demo">Try the demo</Link>
       </p>
     </>
   );

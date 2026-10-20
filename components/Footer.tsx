@@ -1,6 +1,4 @@
-"use client";
-
-import { Link } from "react-aria-components";
+import { Link } from "@/components/Link";
 
 export function Footer() {
   return (

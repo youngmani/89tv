@@ -48,7 +48,27 @@
     "jsx-a11y/no-autofocus": "off",
     "jsx-a11y/prefer-tag-over-role": "off",
     "react/set-state-in-effect": "warn",
-    "react/immutability": "warn"
+    "react/immutability": "warn",
+    "no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          {
+            "name": "react-aria-components",
+            "importNames": ["Link"],
+            "message": "Use Link from @/components/Link, which prefetches pages within the site."
+          }
+        ]
+      }
+    ]
   },
-  "ignorePatterns": [".next/**", "out/**", "next-env.d.ts"]
+  "ignorePatterns": [".next/**", "out/**", "next-env.d.ts"],
+  "overrides": [
+    {
+      "files": ["components/Link.tsx"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
 }

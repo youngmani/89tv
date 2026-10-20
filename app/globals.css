@@ -4,8 +4,6 @@
 :root,
 [data-theme="neutral"] {
   --bg: #0f0f13;
-  --bg-glow-1: rgba(167, 139, 250, 0.12);
-  --bg-glow-2: rgba(56, 189, 248, 0.08);
   --panel: #18181e;
   --panel-2: #22222a;
   --border: #31313b;
@@ -23,8 +21,6 @@
 
 [data-theme="halloween"] {
   --bg: #110b16;
-  --bg-glow-1: rgba(255, 122, 26, 0.16);
-  --bg-glow-2: rgba(139, 92, 246, 0.18);
   --panel: #1c1424;
   --panel-2: #281c33;
   --border: #3b2a49;
@@ -42,8 +38,6 @@
 
 [data-theme="winter"] {
   --bg: #0a1626;
-  --bg-glow-1: rgba(125, 211, 252, 0.14);
-  --bg-glow-2: rgba(248, 113, 113, 0.1);
   --panel: #10223a;
   --panel-2: #183050;
   --border: #284669;
@@ -79,41 +73,13 @@ html,
 body {
   min-height: 100%;
 }
-/* Overscrolling, Safari keeps the fixed root background still but moves fixed elements, while Chrome keeps fixed
-   elements still but fills the gap with a plain colour. So Chrome also gets the glow on a fixed layer, and WebKit
-   doesn't. */
-body,
-body::before {
-  background-color: var(--bg);
-  background-image:
-    var(--sprinkle), radial-gradient(60rem 30rem at 15% -10%, var(--bg-glow-2), transparent 70%),
-    radial-gradient(50rem 30rem at 100% 110%, var(--bg-glow-1), transparent 70%);
-  background-size:
-    12.5rem 12.5rem,
-    auto,
-    auto;
-  background-attachment: fixed;
-  transition: background-color 0.5s;
-}
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-}
-@supports (font: -apple-system-body) {
-  body::before {
-    display: none;
-  }
-}
-/* Positioned, so they paint above the glow layer that comes before them. */
-main,
-.site-footer {
-  position: relative;
-}
 body {
   margin: 0;
   color: var(--text);
+  background-color: var(--bg);
+  background-image: var(--sprinkle);
+  background-size: 12.5rem 12.5rem;
+  background-attachment: fixed;
   font:
     0.9375rem/1.5 var(--font-nunito),
     system-ui,
@@ -329,6 +295,7 @@ img {
 /* ---------- Buttons ---------- */
 .btn {
   display: inline-flex;
+  text-decoration: none;
   align-items: center;
   justify-content: center;
   gap: 0.375rem;

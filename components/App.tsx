@@ -23,6 +23,7 @@ import { MappingFocus } from "@/components/MappingFocus";
 import { MappingOverview } from "@/components/MappingOverview";
 import { MappingSummary } from "@/components/MappingSummary";
 import { SetPicker } from "@/components/SetPicker";
+import { SiteHeader } from "@/components/SiteHeader";
 import { TokenGate } from "@/components/TokenGate";
 import { ErrorText, LoadingCard, LogInAgainContext, SelectField, Spinner } from "@/components/ui";
 import {
@@ -1362,23 +1363,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   ) : null;
 
   const header = (
-    <header className="top">
-      <h1>
-        {/* All three are rendered and CSS picks one from <html data-theme>, which an inline script sets before
-            first paint, so the logo is right even before hydration. */}
-        <span className="logo" aria-hidden>
-          <span className="logo-halloween">🎃</span>
-          <span className="logo-winter">❄️</span>
-          <span className="logo-neutral">✨</span>
-        </span>{" "}
-        {/* Styled like the favicon: the 9 in the accent colour, tucked into the 8. Reads as "89TV". */}
-        <span className="wordmark">
-          <span className="eight">8</span>
-          <span className="nine">9</span>
-          TV
-        </span>
-      </h1>
-      <p className="tagline">Make a seasonal copy of your 7TV emote set</p>
+    <SiteHeader>
       {/* The demo's account is fake, so there's no user (or Sign out) to show; it gets its own action instead. */}
       {mode !== "live" && headerAction && <div className="me">{headerAction}</div>}
       {me && mode === "live" && (
@@ -1392,7 +1377,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           </Button>
         </div>
       )}
-    </header>
+    </SiteHeader>
   );
 
   // Before hydration (and in the prerendered HTML) only the header shows; nothing below it can be right yet.

@@ -1,16 +1,9 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import {
-  Button,
-  Checkbox,
-  Form,
-  Input,
-  Link,
-  TextField,
-  ToggleButton,
-} from "react-aria-components";
+import { Button, Checkbox, Form, Input, TextField, ToggleButton } from "react-aria-components";
 import { Image } from "@/components/Image";
+import { Link } from "@/components/Link";
 import { ErrorText, SelectField, Spinner } from "@/components/ui";
 import { shouldIgnoreKey } from "@/lib/hotkeys";
 import {
