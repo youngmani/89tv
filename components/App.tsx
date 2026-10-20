@@ -61,6 +61,7 @@ import {
   isCapacityError,
   isEmoteLevelError,
   onRateLimitPause,
+  orderSets,
   parseEmoteId,
   searchWait,
   usedSlots,
@@ -367,6 +368,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   }, [signOut]);
 
   const tags = useMemo(() => tagsFor(theme, customTags), [theme, customTags]);
+  const orderedSets = useMemo(() => orderSets(sets, me?.id), [sets, me]);
 
   // ---- Searching ----
   const runSearch = useCallback(
@@ -1678,7 +1680,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
             <SetPicker
               label="Base set"
               description="Read-only source"
-              sets={sets}
+              sets={orderedSets}
               value={sourceId}
               onChange={(id) => {
                 setSourceId(id);
@@ -1690,7 +1692,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
             <SetPicker
               label="Seasonal set"
               description="Changes are saved here"
-              sets={sets}
+              sets={orderedSets}
               value={targetId}
               onChange={setTargetId}
               disabledId={sourceId}

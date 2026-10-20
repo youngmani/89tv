@@ -10,7 +10,7 @@ const CUSTOM = "__custom__";
 export function setLabel(s: EmoteSetInfo) {
   const owner = s.owner?.mainConnection?.platformDisplayName;
   const cap = s.capacity ? `/${s.capacity}` : "";
-  return `${s.name}${owner ? ` — ${owner}` : ""} (${s.emotes.totalCount}${cap})`;
+  return `${s.name}${owner ? ` - ${owner}` : ""} (${s.emotes.totalCount}${cap})`;
 }
 
 /**

@@ -109,7 +109,7 @@ export function MappingFocus({
   onNavigate,
 }: {
   source: SetEmote;
-  /** e.g. "3 of 18" — where this emote sits in its group. */
+  /** e.g. "3 of 18" - where this emote sits in its group. */
   position: string;
   canPrev: boolean;
   canNext: boolean;
@@ -400,11 +400,6 @@ export function MappingFocus({
             {search.via !== "link" &&
               search.hidden > 0 &&
               ` · hiding ${search.hidden} private or deleted`}
-            {search.via !== "link" &&
-              items.length === 0 &&
-              (mapped
-                ? " — no other versions to swap in."
-                : " — no seasonal version, so the base emote will be copied.")}
             {search.via !== "link" && search.exact && (
               <>
                 {" · "}

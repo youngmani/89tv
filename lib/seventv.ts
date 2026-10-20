@@ -427,3 +427,13 @@ export function friendlyError(e: unknown): string {
 
 /** Slots used in a set, as 7TV counts them: deleted emotes don't take up capacity. */
 export const usedSlots = (emotes: SetEmote[]) => emotes.filter((e) => !e.emote.deleted).length;
+
+const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true }).compare;
+
+export function orderSets(sets: EmoteSetInfo[], userId: string | undefined): EmoteSetInfo[] {
+  const rank = (s: EmoteSetInfo) => (s.ownerId === userId ? 0 : s.owner?.mainConnection ? 1 : 2);
+  const owner = (s: EmoteSetInfo) => s.owner?.mainConnection?.platformDisplayName ?? "";
+  return sets.toSorted(
+    (a, b) => rank(a) - rank(b) || byName(owner(a), owner(b)) || byName(a.name, b.name),
+  );
+}
