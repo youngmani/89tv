@@ -2,7 +2,7 @@
 
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { Button, Checkbox, Form, Input, TextField, ToggleButton } from "react-aria-components";
-import { Image } from "@/components/Image";
+import { EmoteImage } from "@/components/EmoteImage";
 import { Link } from "@/components/Link";
 import { ErrorText, SelectField, Spinner } from "@/components/ui";
 import { shouldIgnoreKey } from "@/lib/hotkeys";
@@ -17,14 +17,7 @@ import {
   type SearchState,
   outcome,
 } from "@/lib/mapping";
-import {
-  type EmoteSummary,
-  type SetEmote,
-  type SortBy,
-  emoteImage,
-  emotePage,
-  ownerName,
-} from "@/lib/seventv";
+import { type EmoteSummary, type SetEmote, type SortBy, emotePage, ownerName } from "@/lib/seventv";
 
 /** A selectable emote. The 7tv.app link is a sibling of the button, never nested inside it. */
 function Tile({
@@ -61,7 +54,7 @@ function Tile({
         aria-label={`${badge ? `${badge}: ` : ""}${emote.defaultName} by ${ownerName(emote)}${zeroWidth ? ", zero-width" : ""}${note ? `, ${note}` : ""}`}
       >
         {badge && <span className="badge">{badge}</span>}
-        <Image src={emoteImage(emote.id, 3)} alt="" index={index} />
+        <EmoteImage emote={emote} size="large" alt="" index={index} />
         <span className="name">{emote.defaultName}</span>
         <span className="owner">{ownerName(emote)}</span>
         {note && <span className="note">{note}</span>}
@@ -213,14 +206,14 @@ export function MappingFocus({
               role="img"
               aria-label={`${source.emote.defaultName} → ${changed.defaultName}`}
             >
-              <Image src={emoteImage(source.emote.id, 3)} alt="" />
+              <EmoteImage emote={source.emote} size="large" alt="" />
               <span className="arrow" aria-hidden>
                 →
               </span>
-              <Image src={emoteImage(changed.id, 3)} alt="" />
+              <EmoteImage emote={changed} size="large" alt="" />
             </div>
           ) : (
-            <Image src={emoteImage(source.emote.id, 3)} alt="" />
+            <EmoteImage emote={source.emote} size="large" alt="" />
           )}
           <div
             className={`alias${choice.kind === "remove" || choice.kind === "exclude" ? " struck" : ""}`}
@@ -232,8 +225,8 @@ export function MappingFocus({
             {source.flags.zeroWidth ? "zero-width · " : ""}
             {replacing ? (
               <span className="replacing">
-                replacing <Image src={emoteImage(replacing.id, 1)} alt="" /> {replacing.defaultName}{" "}
-                ·{" "}
+                replacing <EmoteImage emote={replacing} size="small" alt="" />{" "}
+                {replacing.defaultName} ·{" "}
               </span>
             ) : !inBase ? (
               "only in your seasonal set · "

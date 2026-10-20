@@ -189,6 +189,16 @@ img {
     animation: none;
   }
 }
+picture {
+  display: contents;
+}
+.img-loading.emote-preview {
+  animation: none;
+  background-color: transparent;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
 
 .muted {
   color: var(--muted);

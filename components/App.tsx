@@ -25,6 +25,7 @@ import { MappingSummary } from "@/components/MappingSummary";
 import { SetPicker } from "@/components/SetPicker";
 import { SiteHeader } from "@/components/SiteHeader";
 import { TokenGate } from "@/components/TokenGate";
+import { preloadEmote } from "@/components/EmoteImage";
 import { ErrorText, LoadingCard, LogInAgainContext, SelectField, Spinner } from "@/components/ui";
 import {
   type ApplyState,
@@ -55,7 +56,6 @@ import {
   type SetEmote,
   type SortBy,
   canAddTo,
-  emoteImage,
   freeSearches,
   friendlyError,
   isCapacityError,
@@ -67,7 +67,7 @@ import {
 } from "@/lib/seventv";
 import { type Section, type Step, buildSteps, stepAlias, stepRow, stepSection } from "@/lib/steps";
 import { useServices } from "@/lib/services";
-import { listOf, plural, preloadImage, sleep } from "@/lib/util";
+import { listOf, plural, sleep } from "@/lib/util";
 
 type Filter = "all" | "replace" | "original" | "exclude" | "changed" | "remove" | "errors";
 
@@ -436,6 +436,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         .catch((e): SearchState => ({ ...base, status: "error", error: friendlyError(e) }))
         .then((state) => {
           if (!signal.aborted) setSearches((prev) => ({ ...prev, [alias]: state }));
+          if (state.status === "error" && searchPromises.current.get(alias) === p)
+            searchPromises.current.delete(alias);
           return state;
         });
       searchPromises.current.set(alias, p);
@@ -536,7 +538,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           const ready = runSearch(first).then((st) =>
             Promise.all(
               [first.emote, current, ...st.items].flatMap((e) =>
-                e ? [preloadImage(emoteImage(e.id, 3))] : [],
+                e ? [preloadEmote(e, "large")] : [],
               ),
             ),
           );
@@ -727,9 +729,9 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       if (cancelled || !next || searchPromises.current.has(next.alias)) return;
       if (freeSearches() < 2) return;
       ensureSearch(next).then((st) => {
-        for (const e of st.items) void preloadImage(emoteImage(e.id, 3));
+        for (const e of st.items) void preloadEmote(e, "large");
       });
-      void preloadImage(emoteImage(next.emote.id, 3));
+      void preloadEmote(next.emote, "large");
     };
     const searchNow = () => {
       if (cancelled) return;

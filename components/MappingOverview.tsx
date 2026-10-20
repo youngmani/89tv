@@ -10,9 +10,9 @@ import {
   ListLayout,
   Virtualizer,
 } from "react-aria-components";
-import { Image } from "@/components/Image";
+import { EmoteImage } from "@/components/EmoteImage";
 import { type ApplyState, type Choice, KEEP, ORIGINAL, type Outcome, outcome } from "@/lib/mapping";
-import { type SetEmote, emoteImage, ownerName } from "@/lib/seventv";
+import { type SetEmote, ownerName } from "@/lib/seventv";
 
 interface Row {
   row: SetEmote;
@@ -181,13 +181,13 @@ function MappingOverviewImpl({
                   ].join(" ")}
                   aria-label={`${row.alias}: ${describe(row, c, o, a, !!section.extra)}`}
                 >
-                  <Image src={emoteImage(row.emote.id, 1)} alt="" loading="lazy" index={index} />
+                  <EmoteImage emote={row.emote} size="small" alt="" loading="lazy" index={index} />
                   {!end ? (
                     <span className="arrow">✗</span>
                   ) : end.id !== row.emote.id ? (
                     <>
                       <span className="arrow">→</span>
-                      <Image src={emoteImage(end.id, 1)} alt="" loading="lazy" index={index} />
+                      <EmoteImage emote={end} size="small" alt="" loading="lazy" index={index} />
                     </>
                   ) : null}
                   <span className="chip-name">{row.alias}</span>

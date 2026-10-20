@@ -199,8 +199,8 @@ export type SortBy =
 
 // ---------- Helpers ----------
 
-export const emoteImage = (id: string, size: 1 | 2 | 3 | 4 = 2) =>
-  `https://cdn.7tv.app/emote/${id}/${size}x.webp`;
+export const emoteImage = (id: string, scale: 1 | 2 | 3 | 4, format: "avif" | "webp" = "webp") =>
+  `https://cdn.7tv.app/emote/${id}/${scale}x.${format}`;
 export const emotePage = (id: string) => `https://7tv.app/emotes/${id}`;
 export const ownerName = (o: { owner: EmoteSummary["owner"] }) =>
   o.owner?.mainConnection?.platformDisplayName ?? "unknown";
