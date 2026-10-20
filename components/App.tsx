@@ -1380,8 +1380,16 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     </SiteHeader>
   );
 
-  // Before hydration (and in the prerendered HTML) only the header shows; nothing below it can be right yet.
-  if (!hydrated) return <main>{header}</main>;
+  // Before hydration (and in the prerendered HTML) nothing below the header can be right yet.
+  if (!hydrated)
+    return (
+      <main>
+        {header}
+        <div className="fade-in-delayed">
+          <LoadingCard message="Loading…" />
+        </div>
+      </main>
+    );
 
   return (
     <LogInAgainContext.Provider value={logInAgain}>

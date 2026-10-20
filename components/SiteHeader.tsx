@@ -1,4 +1,3 @@
-/** The site's title and tagline. `children` go in the corner beside it (the account, or the demo's exit link). */
 export function SiteHeader({ children }: { children?: React.ReactNode }) {
   return (
     <header className="top">

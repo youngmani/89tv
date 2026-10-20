@@ -62,6 +62,8 @@
 /* Every theme is dark, so form controls, scrollbars and the browser's own surfaces should be too. */
 :root {
   color-scheme: dark;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
   /* Thin scrollbars in the theme's colours (standard properties only). scrollbar-color is inherited, so this
      covers every scrolling element; scrollbar-width isn't, hence the universal rule. */
   scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent;
@@ -213,8 +215,8 @@ img {
 }
 
 [data-focus-visible] {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
 }
 /* Select and Checkbox mark their whole wrapper as focus-visible too; only the control itself gets the ring. */
 .field[data-focus-visible],
@@ -512,8 +514,8 @@ img {
   color: var(--accent-text);
 }
 .checkbox[data-focus-visible] .box {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
 }
 
 /* ---------- Token screen ---------- */
@@ -1221,6 +1223,9 @@ img {
   height: 0.875rem;
   border-width: 2px;
 }
+.fade-in-delayed {
+  animation: fade-in 0.2s ease-out 0.1s both;
+}
 .loading-card {
   display: flex;
   flex-direction: column;
@@ -1363,9 +1368,10 @@ main:has(.workspace) {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* Room inside the scroll box for a tile's focus ring (2px outline, 2px offset), without moving anything. */
-  padding: 0.25rem;
-  margin: -0.25rem;
+  /* Room for a tile's focus ring inside the scroll box, without moving anything. */
+  --focus-ring-room: calc(var(--focus-ring-width) + var(--focus-ring-offset));
+  padding: var(--focus-ring-room);
+  margin: calc(-1 * var(--focus-ring-room));
 }
 /* Shown instead of a card when nothing matches the list's filter. */
 .empty-state {

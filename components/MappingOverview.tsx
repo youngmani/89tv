@@ -84,7 +84,6 @@ function MappingOverviewImpl({
   targetEntries: Record<string, SetEmote>;
   applyStates: Record<string, ApplyState>;
   onJump: (index: number) => void;
-  /** Selection follows keyboard focus, so arrowing through the list changes the card. */
   followFocus?: boolean;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
