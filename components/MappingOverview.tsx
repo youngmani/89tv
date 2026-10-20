@@ -6,6 +6,7 @@ import {
   GridListHeader,
   GridListItem,
   GridListSection,
+  type Key,
   ListLayout,
   Virtualizer,
 } from "react-aria-components";
@@ -74,6 +75,7 @@ function MappingOverviewImpl({
   targetEntries,
   applyStates,
   onJump,
+  followFocus = false,
 }: {
   /** `extra` marks the section of target-only emotes (keep, swap or remove). */
   sections: { title: string; rows: Row[]; extra?: boolean }[];
@@ -82,6 +84,8 @@ function MappingOverviewImpl({
   targetEntries: Record<string, SetEmote>;
   applyStates: Record<string, ApplyState>;
   onJump: (index: number) => void;
+  /** Selection follows keyboard focus, so arrowing through the list changes the card. */
+  followFocus?: boolean;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const [rem] = useState(remInPx);
@@ -130,6 +134,11 @@ function MappingOverviewImpl({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentAlias, visible]);
 
+  const jumpTo = (key: Key | undefined) => {
+    const i = key === undefined ? undefined : indexOf.get(String(key));
+    if (i !== undefined) onJump(i);
+  };
+
   return (
     <Virtualizer
       layout={ListLayout}
@@ -139,10 +148,12 @@ function MappingOverviewImpl({
         ref={listRef}
         className="overview"
         aria-label="All emotes"
-        onAction={(key) => {
-          const i = indexOf.get(String(key));
-          if (i !== undefined) onJump(i);
-        }}
+        selectionMode="single"
+        selectionBehavior={followFocus ? "replace" : "toggle"}
+        disallowEmptySelection
+        escapeKeyBehavior="none"
+        selectedKeys={currentAlias ? [currentAlias] : []}
+        onSelectionChange={(keys) => keys !== "all" && jumpTo([...keys][0])}
       >
         {visible.map((section) => (
           <GridListSection key={section.title} id={section.title} className="overview-section">

@@ -1287,7 +1287,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       onChange={(id) => changeFilter(id as Filter)}
     />
   );
-  const emoteList = (
+  const emoteList = (inDrawer: boolean) => (
     <>
       {overviewSections.some((sec) => sec.rows.length) ? (
         <MappingOverview
@@ -1297,6 +1297,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           targetEntries={targetEntries}
           applyStates={applyStates}
           onJump={jumpFromList}
+          followFocus={!inDrawer}
         />
       ) : (
         <p className="muted small center">No emotes match this filter.</p>
@@ -1579,7 +1580,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                   {/* The box matches the card's height; its contents stay on screen as a tall card scrolls. */}
                   <div className="emote-list-inner">
                     {filterSelect}
-                    {emoteList}
+                    {emoteList(false)}
                   </div>
                 </aside>
               )}
@@ -1646,7 +1647,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                       </Button>
                     </div>
                   )}
-                  {emoteList}
+                  {emoteList(true)}
                 </SheetContent>
               </Sheet>
             </SheetOverlay>
