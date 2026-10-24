@@ -107,6 +107,15 @@ export function themeForDate(d = new Date()): Theme {
   return "custom";
 }
 
+const SET_NAME_THEMES: [Theme, RegExp][] = [
+  ["halloween", /halloween|spooky|october|pumpkin|🎃/i],
+  ["christmas", /christmas|xmas|holiday|festive|winter|december|🎄/i],
+];
+
+export function themeForSetName(name: string): Theme | null {
+  return SET_NAME_THEMES.find(([, pattern]) => pattern.test(name))?.[0] ?? null;
+}
+
 export const DEFAULT_SORT: SortBy = "TOP_ALL_TIME";
 
 // ---------- The in-progress mapping ----------

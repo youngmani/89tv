@@ -45,6 +45,7 @@ import {
   THEMES,
   type Theme,
   themeForDate,
+  themeForSetName,
   mappingParams,
   type Outcome,
   outcome,
@@ -1693,7 +1694,11 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
               description="Changes are saved here"
               sets={orderedSets}
               value={targetId}
-              onChange={setTargetId}
+              onChange={(id) => {
+                setTargetId(id);
+                const guess = themeForSetName(sets.find((s) => s.id === id)?.name ?? "");
+                if (guess) setTheme(guess);
+              }}
               disabledId={sourceId}
             />
             <div className="field-group theme-group">
