@@ -1,6 +1,6 @@
 "use client";
 
-import { type ComponentProps, useState } from "react";
+import { type ComponentProps, useEffect, useState } from "react";
 import { Image } from "@/components/Image";
 import { type EmoteSummary, emoteImage } from "@/lib/seventv";
 import { preloadImage } from "@/lib/util";
@@ -17,7 +17,10 @@ const formatFor = (emote: Emote) => (emote.flags.animated ? "webp" : "avif");
 const srcSet = (id: string, size: Size, format: "avif" | "webp") =>
   SCALES[size].map((scale, i) => `${emoteImage(id, scale, format)} ${i + 1}x`).join(", ");
 
-/** The file each emote's small image loaded (whichever format and scale the browser picked), shown while a large one loads. */
+/**
+ * The file each emote's small image loaded (whichever format and scale the browser picked), shown while its large one
+ * loads. Dropped once the large one has loaded, as it's cached from then on.
+ */
 const loadedSmall = new Map<string, string>();
 
 export const preloadEmote = (emote: Emote, size: Size) =>
@@ -26,8 +29,9 @@ export const preloadEmote = (emote: Emote, size: Size) =>
   );
 
 /**
- * A 7TV emote. A large one shows the emote's already-loaded small image, scaled up, until it has loaded, and
- * instead of it if it fails to load.
+ * A 7TV emote. A large one first shows the emote's already-loaded small image, scaled up, while the large one loads
+ * out of view (an animated image starts playing before it has finished loading, out of step with the small one), and
+ * keeps showing it if the large one fails.
  */
 export function EmoteImage({
   emote,
@@ -35,15 +39,36 @@ export function EmoteImage({
   className,
   style,
   onLoad,
-  onError,
   ...props
 }: Omit<ComponentProps<typeof Image>, "src" | "srcSet"> & { emote: Emote; size: Size }) {
   const src = emoteImage(emote.id, SCALES[size][0], "webp");
-  const [loadedSrc, setLoadedSrc] = useState<string>();
-  const [failedSrc, setFailedSrc] = useState<string>();
-  const small = size === "large" && loadedSrc !== src ? loadedSmall.get(emote.id) : undefined;
-  if (small && failedSrc === src)
-    return <Image {...props} src={small} className={className} style={style} onLoad={onLoad} />;
+  const small = size === "large" ? loadedSmall.get(emote.id) : undefined;
+  const [ready, setReady] = useState<{ src: string; loaded: boolean }>();
+  const waiting = !!small && ready?.src !== src;
+
+  useEffect(() => {
+    if (!waiting) return;
+    let cancelled = false;
+    void preloadEmote(emote, size).then((loaded) => {
+      if (cancelled) return;
+      if (loaded) loadedSmall.delete(emote.id);
+      setReady({ src, loaded });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [waiting, emote, size, src]);
+
+  if (small && (waiting || !ready?.loaded))
+    return (
+      <Image
+        {...props}
+        src={small}
+        className={[className, "cached"].filter(Boolean).join(" ")}
+        style={style}
+        onLoad={onLoad}
+      />
+    );
   return (
     <picture>
       {formatFor(emote) === "avif" && (
@@ -53,16 +78,14 @@ export function EmoteImage({
         {...props}
         src={src}
         srcSet={srcSet(emote.id, size, "webp")}
-        className={[className, small && "emote-preview"].filter(Boolean).join(" ") || undefined}
-        style={small ? { ...style, backgroundImage: `url("${small}")` } : style}
+        className={
+          [className, ready?.src === src && ready.loaded && "cached"].filter(Boolean).join(" ") ||
+          undefined
+        }
+        style={style}
         onLoad={(e) => {
           if (size === "small") loadedSmall.set(emote.id, e.currentTarget.currentSrc);
-          setLoadedSrc(src);
           onLoad?.(e);
-        }}
-        onError={(e) => {
-          setFailedSrc(src);
-          onError?.(e);
         }}
       />
     </picture>

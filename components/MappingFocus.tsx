@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import { Button, Checkbox, Form, Input, TextField, ToggleButton } from "react-aria-components";
+import {
+  Button,
+  CheckboxButton,
+  CheckboxField,
+  Form,
+  Input,
+  TextField,
+  ToggleButton,
+} from "react-aria-components";
 import { EmoteImage } from "@/components/EmoteImage";
 import { Link } from "@/components/Link";
 import { ErrorText, SelectField, Spinner } from "@/components/ui";
@@ -269,26 +277,22 @@ export function MappingFocus({
           </Button>
         </div>
         <div className="search-filters">
-          <Checkbox
-            className="checkbox"
-            isSelected={opts.exact}
-            onChange={(exact) => update({ exact }, true)}
-          >
-            <span className="box" aria-hidden>
-              ✓
-            </span>
-            Exact name
-          </Checkbox>
-          <Checkbox
-            className="checkbox"
-            isSelected={opts.tagged}
-            onChange={(tagged) => update({ tagged }, true)}
-          >
-            <span className="box" aria-hidden>
-              ✓
-            </span>
-            Only {tags.join(" / ")} emotes
-          </Checkbox>
+          <CheckboxField isSelected={opts.exact} onChange={(exact) => update({ exact }, true)}>
+            <CheckboxButton className="checkbox">
+              <span className="box" aria-hidden>
+                ✓
+              </span>
+              Exact name
+            </CheckboxButton>
+          </CheckboxField>
+          <CheckboxField isSelected={opts.tagged} onChange={(tagged) => update({ tagged }, true)}>
+            <CheckboxButton className="checkbox">
+              <span className="box" aria-hidden>
+                ✓
+              </span>
+              Only {tags.join(" / ")} emotes
+            </CheckboxButton>
+          </CheckboxField>
           <SelectField
             aria-label="Sort by"
             className="compact"

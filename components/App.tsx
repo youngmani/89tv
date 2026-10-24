@@ -7,6 +7,9 @@ import {
   Input,
   Label,
   ProgressBar,
+  RadioButton,
+  RadioField,
+  RadioGroup,
   Sheet,
   SheetBackdrop,
   SheetContent,
@@ -15,6 +18,7 @@ import {
   TabList,
   TabPanel,
   Tabs,
+  Text,
   TextField,
 } from "react-aria-components";
 import { type DialogOptions, DialogContent, ModalShell, useDialog } from "@/components/Dialog";
@@ -36,7 +40,6 @@ import {
   type MappingRecord,
   type RemovedEntry,
   ORIGINAL,
-  SORT_OPTIONS,
   type SearchOptions,
   type SearchState,
   THEMES,
@@ -54,7 +57,6 @@ import {
   type SearchResult,
   type Me,
   type SetEmote,
-  type SortBy,
   canAddTo,
   freeSearches,
   friendlyError,
@@ -226,7 +228,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   const [targetId, setTargetId] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>("custom");
   const [customTags, setCustomTags] = useState("");
-  const [sortBy, setSortBy] = useState<SortBy>(DEFAULT_SORT);
 
   /** A saved in-progress mapping waiting to be resumed (or that failed to resume). */
   const [resume, setResume] = useState<MappingRecord | null>(null);
@@ -617,7 +618,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       setTargetId(saved.targetId);
       setTheme(saved.theme);
       setCustomTags(saved.customTags);
-      setSortBy(saved.sortBy);
       setResume(saved);
     } else {
       setTheme(themeForDate());
@@ -1248,7 +1248,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     const k = mappedKind(r);
     if (k) mappedKinds[k]++;
   }
-  const themeItems = Object.entries(THEMES).map(([id, t]) => ({ id, label: t.label }));
+  const themeItems = Object.entries(THEMES).map(([id, t]) => ({ id, icon: t.icon, name: t.name }));
   const filterItems = [
     { id: "all", label: `All (${rows.length + extras.length})` },
     { id: "replace", label: `Seasonal picks (${stats.replace + mappedKinds.replace})` },
@@ -1482,8 +1482,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                   <b>{session.target.name}</b>
                 </div>
                 <div className="muted small">
-                  Looking for emotes tagged {session.tags.join(" or ")}, sorted by{" "}
-                  {SORT_OPTIONS.find((i) => i.id === session.params.sortBy)?.label}
+                  Looking for emotes tagged {session.tags.join(" or ")}
                 </div>
                 <div className="stats">
                   <span>
@@ -1697,16 +1696,30 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
               onChange={setTargetId}
               disabledId={sourceId}
             />
-            <div className="field-group">
-              <SelectField
-                label="Theme"
-                items={themeItems}
+            <div className="field-group theme-group">
+              <RadioGroup
+                className="field"
                 value={theme}
                 onChange={(id) => setTheme(id as Theme)}
-                description={
-                  theme === "custom" ? undefined : `Search for emotes tagged ${tags.join(" or ")}`
-                }
-              />
+                orientation="horizontal"
+              >
+                <Label>Theme</Label>
+                <div className="segmented">
+                  {themeItems.map((t) => (
+                    <RadioField key={t.id} value={t.id}>
+                      <RadioButton className="segment">
+                        <span aria-hidden>{t.icon}</span>
+                        {t.name}
+                      </RadioButton>
+                    </RadioField>
+                  ))}
+                </div>
+                {theme !== "custom" && (
+                  <Text slot="description" className="muted small">
+                    Search for emotes tagged {tags.join(" or ")}
+                  </Text>
+                )}
+              </RadioGroup>
               {theme === "custom" && (
                 <TextField className="field" value={customTags} onChange={setCustomTags}>
                   <Label className="visually-hidden">Custom tags</Label>
@@ -1714,12 +1727,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                 </TextField>
               )}
             </div>
-            <SelectField
-              label="Sort by"
-              items={SORT_OPTIONS}
-              value={sortBy}
-              onChange={(id) => setSortBy(id as SortBy)}
-            />
             <div className="actions">
               <Button
                 className="btn primary"
@@ -1728,7 +1735,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                 onPress={() =>
                   sourceId &&
                   targetId &&
-                  void startMapping({ sourceId, targetId, theme, customTags, sortBy })
+                  void startMapping({ sourceId, targetId, theme, customTags, sortBy: DEFAULT_SORT })
                 }
               >
                 {({ isPending }) => (

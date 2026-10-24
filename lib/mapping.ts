@@ -93,9 +93,9 @@ export function outcome(row: SetEmote, choice: Choice, current: SetEmote | undef
 
 // `palette` selects the site-wide colour scheme (see [data-theme] in globals.css).
 export const THEMES = {
-  halloween: { label: "🎃 Halloween", tags: ["halloween"], palette: "halloween" },
-  christmas: { label: "🎄 Christmas", tags: ["christmas", "xmas"], palette: "winter" },
-  custom: { label: "✨ Custom", tags: [] as string[], palette: "neutral" },
+  halloween: { icon: "🎃", name: "Halloween", tags: ["halloween"], palette: "halloween" },
+  christmas: { icon: "🎄", name: "Christmas", tags: ["christmas", "xmas"], palette: "winter" },
+  custom: { icon: "✨", name: "Custom", tags: [] as string[], palette: "neutral" },
 } as const;
 export type Theme = keyof typeof THEMES;
 

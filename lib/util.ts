@@ -17,11 +17,11 @@ export const sleep = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener("abort", onAbort, { once: true });
   });
 
-/** Loads an image into the browser cache; resolves once it has loaded (or failed). */
+/** Loads an image into the browser cache; resolves with whether it loaded. */
 export const preloadImage = (src: string) =>
-  new Promise<void>((resolve) => {
+  new Promise<boolean>((resolve) => {
     const img = new Image();
-    img.addEventListener("load", () => resolve());
-    img.addEventListener("error", () => resolve());
+    img.addEventListener("load", () => resolve(true));
+    img.addEventListener("error", () => resolve(false));
     img.src = src;
   });
