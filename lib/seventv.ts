@@ -433,7 +433,7 @@ const byName = new Intl.Collator(undefined, { sensitivity: "base", numeric: true
 export function orderSets(sets: EmoteSetInfo[], userId: string | undefined): EmoteSetInfo[] {
   const rank = (s: EmoteSetInfo) => (s.ownerId === userId ? 0 : s.owner?.mainConnection ? 1 : 2);
   const owner = (s: EmoteSetInfo) => s.owner?.mainConnection?.platformDisplayName ?? "";
-  return sets.toSorted(
+  return [...sets].sort(
     (a, b) => rank(a) - rank(b) || byName(owner(a), owner(b)) || byName(a.name, b.name),
   );
 }

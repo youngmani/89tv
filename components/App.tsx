@@ -491,11 +491,11 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           throw new Error("You don't have permission to edit this emote set.");
         // An emote counts as already mapped when the target has something under the same name (alias).
         const entries = new Map(targetEmotes.map((e) => [e.alias, e]));
-        const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).toSorted(byAlias);
-        const mappedRows = sourceEmotes.filter((e) => entries.has(e.alias)).toSorted(byAlias);
+        const pendingRows = sourceEmotes.filter((e) => !entries.has(e.alias)).sort(byAlias);
+        const mappedRows = sourceEmotes.filter((e) => entries.has(e.alias)).sort(byAlias);
         // Target emotes the source doesn't have (e.g. the source changed since last season).
         const sourceAliases = new Set(sourceEmotes.map((e) => e.alias));
-        const extraRows = targetEmotes.filter((e) => !sourceAliases.has(e.alias)).toSorted(byAlias);
+        const extraRows = targetEmotes.filter((e) => !sourceAliases.has(e.alias)).sort(byAlias);
         const steps = buildSteps(pendingRows, mappedRows, extraRows);
         const s: Session = {
           params: mappingParams(params),
@@ -1398,7 +1398,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
 
   return (
     <LogInAgainContext.Provider value={logInAgain}>
-      <main>
+      <main className={token && account !== "error" && me && session ? "wide" : undefined}>
         {dialog}
         <ModalShell
           isOpen={!!saveDialog}

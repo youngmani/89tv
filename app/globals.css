@@ -66,6 +66,7 @@
   --focus-ring-offset: 2px;
   /* Thin scrollbars in the theme's colours (standard properties only). scrollbar-color is inherited, so this
      covers every scrolling element; scrollbar-width isn't, hence the universal rule. */
+  scrollbar-color: var(--muted) transparent;
   scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent;
 }
 * {
@@ -281,6 +282,7 @@ picture > source {
 
 /* ---------- Cards ---------- */
 .card {
+  background: var(--panel);
   background: color-mix(in srgb, var(--panel) 92%, transparent);
   border: 1px solid var(--border);
   border-radius: 0.875rem;
@@ -325,6 +327,7 @@ picture > source {
     transform 0.05s;
 }
 .btn[data-hovered] {
+  border-color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
 }
 .btn[data-pressed] {
@@ -430,6 +433,7 @@ picture > source {
   text-align: left;
 }
 .select-button[data-hovered] {
+  border-color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
 }
 .select-value {
@@ -698,6 +702,7 @@ picture > source {
   padding: 0.25rem;
   border: 1px solid var(--border);
   border-radius: 0.75rem;
+  background: var(--panel);
   background: color-mix(in srgb, var(--panel) 92%, transparent);
 }
 .section-tab {
@@ -984,6 +989,7 @@ picture > source {
   min-width: 0;
 }
 .chip.replace {
+  border-color: var(--accent);
   border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 .chip.exclude .chip-name {
@@ -1037,6 +1043,7 @@ picture > source {
 .btn.ghost-danger {
   background: none;
   color: var(--err);
+  border-color: var(--err);
   border-color: color-mix(in srgb, var(--err) 40%, transparent);
 }
 .btn.ghost-danger[data-hovered] {
@@ -1130,7 +1137,9 @@ picture > source {
   padding: 0.625rem 0.875rem;
   border-radius: 0.625rem;
   color: var(--err);
+  background: var(--panel-2);
   background: color-mix(in srgb, var(--err) 10%, transparent);
+  border: 1px solid var(--err);
   border: 1px solid color-mix(in srgb, var(--err) 40%, transparent);
 }
 .ok {
@@ -1142,7 +1151,9 @@ picture > source {
   text-align: left;
   padding: 0.75rem 1rem;
   border-radius: 0.625rem;
+  background: var(--panel-2);
   background: color-mix(in srgb, var(--err) 8%, transparent);
+  border: 1px solid var(--err);
   border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
 }
 .problems h3 {
@@ -1212,6 +1223,7 @@ picture > source {
   width: 2.125rem;
   height: 2.125rem;
   border-radius: 50%;
+  border: 0.1875rem solid var(--border);
   border: 0.1875rem solid color-mix(in srgb, var(--accent) 25%, transparent);
   border-top-color: var(--accent);
   animation: spin 0.8s linear infinite;
@@ -1264,6 +1276,7 @@ picture > source {
 .btn.choice.danger[data-selected] {
   border-color: var(--err);
   color: var(--err);
+  background: var(--panel-2);
   background: color-mix(in srgb, var(--err) 10%, transparent);
 }
 .chip.apply-removed {
@@ -1294,6 +1307,7 @@ picture > source {
   margin: 0;
 }
 .btn .spinner-ring.sm {
+  border-color: var(--border);
   border-color: color-mix(in srgb, currentColor 30%, transparent);
   border-top-color: currentColor;
 }
@@ -1372,7 +1386,7 @@ picture > source {
 }
 
 /* ---------- Workspace: the emote list beside the card ---------- */
-main:has(.workspace) {
+main.wide {
   max-width: 77.5rem;
 }
 .workspace {

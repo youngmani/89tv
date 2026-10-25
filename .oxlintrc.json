@@ -60,7 +60,8 @@
           }
         ]
       }
-    ]
+    ],
+    "unicorn/no-array-sort": "off"
   },
   "ignorePatterns": [".next/**", "out/**", "next-env.d.ts"],
   "overrides": [
