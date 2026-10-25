@@ -1,13 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Nunito } from "next/font/google";
 import { Footer } from "@/components/Footer";
 import { Providers } from "@/components/Providers";
+import { nunito } from "@/lib/fonts";
 import { SITE_URL } from "@/lib/site";
 import "./preflight.css";
 import "./globals.css";
-
-// Self-hosted at build time (no requests to Google from visitors). The variable font covers every weight used.
-const nunito = Nunito({ subsets: ["latin"], variable: "--font-nunito" });
 
 // Tells the browser the page is dark before any CSS loads (its default background, form controls, scrollbars).
 export const viewport: Viewport = { colorScheme: "dark" };
