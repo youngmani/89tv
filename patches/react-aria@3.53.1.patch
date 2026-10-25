@@ -1,0 +1,54 @@
+diff --git a/dist/private/selection/useSelectableCollection.cjs b/dist/private/selection/useSelectableCollection.cjs
+index e25f3ef50810d95c27122cbe29efc3c149e9eeb1..707cc1fc245fbbda838ddd24d2548b044022ca0c 100644
+--- a/dist/private/selection/useSelectableCollection.cjs
++++ b/dist/private/selection/useSelectableCollection.cjs
+@@ -455,7 +455,12 @@ function $df9ba3e9a7210056$export$d6daf82dcd84e87c(options) {
+     };
+     let { typeSelectProps: typeSelectProps } = (0, $a6299e8d95fc8908$exports.useTypeSelect)({
+         keyboardDelegate: delegate,
+-        selectionManager: manager
++        selectionManager: manager,
++        onTypeSelect (key) {
++            // Typeahead moves focus like the arrow keys, so selection should follow focus in the same way.
++            // Only do this for single selection so that typing never replaces a multi-selection.
++            if (selectOnFocus && manager.selectionMode === 'single' && !manager.isSelected(key) && manager.canSelectItem(key) && !(manager.isLink(key) && linkBehavior !== 'action')) manager.replaceSelection(key);
++        }
+     });
+     if (!disallowTypeAhead) // oxlint-disable-next-line react/react-compiler
+     handlers = (0, $89b39774f3b79dbb$exports.mergeProps)(typeSelectProps, handlers);
+diff --git a/dist/private/selection/useSelectableCollection.js b/dist/private/selection/useSelectableCollection.js
+index 455e4a4cb5d1c88479e2d4ac64c296c8eb954bf5..40c9e9ff5713010a176e9fa25e3189f595ffee16 100644
+--- a/dist/private/selection/useSelectableCollection.js
++++ b/dist/private/selection/useSelectableCollection.js
+@@ -464,7 +464,12 @@ function $80c8b4b5cf8e1f86$export$d6daf82dcd84e87c(options) {
+     };
+     let { typeSelectProps: typeSelectProps } = (0, $d6feb9780eea1a71$export$e32c88dfddc6e1d8)({
+         keyboardDelegate: delegate,
+-        selectionManager: manager
++        selectionManager: manager,
++        onTypeSelect (key) {
++            // Typeahead moves focus like the arrow keys, so selection should follow focus in the same way.
++            // Only do this for single selection so that typing never replaces a multi-selection.
++            if (selectOnFocus && manager.selectionMode === 'single' && !manager.isSelected(key) && manager.canSelectItem(key) && !(manager.isLink(key) && linkBehavior !== 'action')) manager.replaceSelection(key);
++        }
+     });
+     if (!disallowTypeAhead) // oxlint-disable-next-line react/react-compiler
+     handlers = (0, $64c36edd757dfa16$export$9d1611c77c2fe928)(typeSelectProps, handlers);
+diff --git a/dist/private/selection/useSelectableCollection.mjs b/dist/private/selection/useSelectableCollection.mjs
+index c9cb2650e73ec5f5d7085bdebc036bae202cabb5..7442638c9fbeb65d9b5b2688be70c08d7aa320e9 100644
+--- a/dist/private/selection/useSelectableCollection.mjs
++++ b/dist/private/selection/useSelectableCollection.mjs
+@@ -449,7 +449,12 @@ function $d667c2af82d35a98$export$d6daf82dcd84e87c(options) {
+     };
+     let { typeSelectProps: typeSelectProps } = (0, $f5a4a9a3486154da$export$e32c88dfddc6e1d8)({
+         keyboardDelegate: delegate,
+-        selectionManager: manager
++        selectionManager: manager,
++        onTypeSelect (key) {
++            // Typeahead moves focus like the arrow keys, so selection should follow focus in the same way.
++            // Only do this for single selection so that typing never replaces a multi-selection.
++            if (selectOnFocus && manager.selectionMode === 'single' && !manager.isSelected(key) && manager.canSelectItem(key) && !(manager.isLink(key) && linkBehavior !== 'action')) manager.replaceSelection(key);
++        }
+     });
+     if (!disallowTypeAhead) // oxlint-disable-next-line react/react-compiler
+     handlers = (0, $bbaa08b3cd72f041$export$9d1611c77c2fe928)(typeSelectProps, handlers);

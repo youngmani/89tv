@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  react-aria@3.53.1: c7b5f5271648e27a5971d6e077c80b166af389621d3bcc7adc440b30bcca2ea1
+
 importers:
 
   .:
@@ -1274,12 +1277,12 @@ snapshots:
       '@swc/helpers': 0.5.23
       client-only: 0.0.1
       react: 19.3.1
-      react-aria: 3.53.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react-aria: 3.53.1(patch_hash=c7b5f5271648e27a5971d6e077c80b166af389621d3bcc7adc440b30bcca2ea1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       react-dom: 19.3.1(react@19.3.1)
       react-stately: 3.51.0(react@19.3.1)
       use-sync-external-store: 1.7.0(react@19.3.1)
 
-  react-aria@3.53.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
+  react-aria@3.53.1(patch_hash=c7b5f5271648e27a5971d6e077c80b166af389621d3bcc7adc440b30bcca2ea1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1):
     dependencies:
       '@internationalized/date': 3.12.4
       '@internationalized/number': 3.6.9
