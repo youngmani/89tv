@@ -285,14 +285,16 @@ export function MappingFocus({
               Exact name
             </CheckboxButton>
           </CheckboxField>
-          <CheckboxField isSelected={opts.tagged} onChange={(tagged) => update({ tagged }, true)}>
-            <CheckboxButton className="checkbox">
-              <span className="box" aria-hidden>
-                ✓
-              </span>
-              Only {tags.join(" / ")} emotes
-            </CheckboxButton>
-          </CheckboxField>
+          {tags.length > 0 && (
+            <CheckboxField isSelected={opts.tagged} onChange={(tagged) => update({ tagged }, true)}>
+              <CheckboxButton className="checkbox">
+                <span className="box" aria-hidden>
+                  ✓
+                </span>
+                Only {tags.join(" / ")} emotes
+              </CheckboxButton>
+            </CheckboxField>
+          )}
           <SelectField
             aria-label="Sort by"
             className="compact"

@@ -58,6 +58,23 @@
     radial-gradient(1px 1px at 3.75rem 10.625rem, rgba(255, 255, 255, 0.5), transparent 60%);
 }
 
+[data-theme="aprilfools"] {
+  --bg: #13101d;
+  --panel: #1e1830;
+  --panel-2: #2a2342;
+  --border: #40365e;
+  --text: #f6f2ff;
+  --muted: #aea4c8;
+  --accent: #ffd23f;
+  --accent-hover: #ffdf6e;
+  --accent-text: #2a2000;
+  --accent-soft: rgba(255, 210, 63, 0.14);
+  --accent-2: #ff7ac4;
+  --ok: #5eead4;
+  --err: #ff6b81;
+  --sprinkle: none;
+}
+
 /* ---------- Base ---------- */
 /* Every theme is dark, so form controls, scrollbars and the browser's own surfaces should be too. */
 :root {
@@ -609,17 +626,80 @@ picture > source {
   background: var(--accent);
   color: var(--accent-text);
 }
-@media (width < 30rem) {
-  .segment {
-    flex-direction: column;
-    line-height: 1.3;
+@media (width < 40rem) {
+  .segmented {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-@media (width < 22.5rem) {
-  .segment {
-    padding-inline: 0.25rem;
-    font-size: 0.8125rem;
-  }
+.prank-setup h2 {
+  margin: 0;
+}
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--panel-2);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.choice[data-hovered] {
+  border-color: var(--muted);
+}
+.choice[data-selected] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.choice[data-disabled] {
+  cursor: default;
+  opacity: 0.6;
+}
+.emote-options {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  max-height: 20rem;
+  overflow-y: auto;
+  padding: var(--focus-ring-width);
+}
+.emote-option {
+  width: 6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  cursor: pointer;
+}
+.emote-option img {
+  width: 3.5rem;
+  height: 3.5rem;
+  object-fit: contain;
+}
+.emote-option .name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8125rem;
+}
+.emote-option[data-hovered] {
+  border-color: var(--muted);
+}
+.emote-option[data-selected] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .actions {
   grid-column: 1 / -1;
@@ -1319,11 +1399,13 @@ picture > source {
 /* Neutral unless a seasonal palette is set, like the palettes themselves. */
 .logo > .logo-neutral,
 [data-theme="halloween"] .logo > .logo-halloween,
-[data-theme="winter"] .logo > .logo-winter {
+[data-theme="winter"] .logo > .logo-winter,
+[data-theme="aprilfools"] .logo > .logo-aprilfools {
   display: inline;
 }
 [data-theme="halloween"] .logo > .logo-neutral,
-[data-theme="winter"] .logo > .logo-neutral {
+[data-theme="winter"] .logo > .logo-neutral,
+[data-theme="aprilfools"] .logo > .logo-neutral {
   display: none;
 }
 

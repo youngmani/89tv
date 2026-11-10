@@ -200,7 +200,8 @@ export function createDemoServices(seed: DemoSeed = DEMO_SEED): Services {
     mode: "demo",
     api,
     storage: { token: noopSlot("demo"), mapping: noopSlot() },
-    initialSelection: { sourceId: DEMO_BASE_ID, targetId: demoSeasonalId(0) },
+    // The pre-selected set is the Halloween one, whatever the date.
+    initialSelection: { sourceId: DEMO_BASE_ID, targetId: demoSeasonalId(0), theme: "halloween" },
     changeDelay: (total) => {
       perChange = demoPerChange(total);
       return perChange * 0.4;

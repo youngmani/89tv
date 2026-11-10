@@ -26,6 +26,7 @@ import { Image } from "@/components/Image";
 import { MappingFocus } from "@/components/MappingFocus";
 import { MappingOverview } from "@/components/MappingOverview";
 import { MappingSummary } from "@/components/MappingSummary";
+import { PrankSetup } from "@/components/PrankSetup";
 import { SetPicker } from "@/components/SetPicker";
 import { SiteHeader } from "@/components/SiteHeader";
 import { TokenGate } from "@/components/TokenGate";
@@ -40,6 +41,7 @@ import {
   type MappingRecord,
   type RemovedEntry,
   ORIGINAL,
+  type Prank,
   type SearchOptions,
   type SearchState,
   THEMES,
@@ -49,6 +51,7 @@ import {
   mappingParams,
   type Outcome,
   outcome,
+  prankChoices,
 } from "@/lib/mapping";
 import { createLimiter } from "@/lib/queue";
 import {
@@ -84,6 +87,14 @@ const SETTLE_MS = 300;
 const LONG_SAVE_MS = 45_000;
 const duration = (ms: number) =>
   ms < 90_000 ? "about a minute" : `about ${Math.round(ms / 60_000)} minutes`;
+
+const prankSummary = (prank: Prank) =>
+  prank.kind === "single"
+    ? `April Fools: every ${prank.existing === "keep" ? "new " : ""}emote shows ${prank.emote.defaultName}`
+    : `April Fools: ${prank.existing === "keep" ? "new" : "all"} emotes shuffled`;
+
+/** How many of the latest requests the save's time-left estimate is based on. */
+const RECENT_REQUESTS = 60;
 
 /** How long "Start picking" waits for the first card before showing it anyway. */
 const FIRST_CARD_BUDGET_MS = 1000;
@@ -372,6 +383,39 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
   const tags = useMemo(() => tagsFor(theme, customTags), [theme, customTags]);
   const orderedSets = useMemo(() => orderSets(sets, me?.id), [sets, me]);
 
+  // Back on the setup form, refresh the account and its sets in the background: saves change the emote counts, and
+  // sets can be created, deleted or shared on 7tv.app meanwhile. The list on screen stays usable if this fails (and
+  // starting a mapping reports real problems), so errors are ignored.
+  const onSetup = account === "ready" && !!token && !!me && !session && !resume && !loading;
+  const lastSetsLoad = useRef(0);
+  const refreshSets = useEffectEvent(async () => {
+    if (!token || Date.now() - lastSetsLoad.current < 10_000) return;
+    lastSetsLoad.current = Date.now();
+    const check = accountCheck.current;
+    const before = sets;
+    try {
+      const user = await api.fetchMe(token);
+      if (!user || check !== accountCheck.current) return;
+      const fresh = await api.fetchSetInfos(user.editableEmoteSetIds, token);
+      if (check !== accountCheck.current) return;
+      const gone = (id: string | null) =>
+        !!id && before.some((s) => s.id === id) && !fresh.some((s) => s.id === id);
+      setMe(user);
+      setSets(fresh);
+      setSourceId((id) => (gone(id) ? null : id));
+      setTargetId((id) => (gone(id) ? null : id));
+    } catch {
+      // Keep what's on screen.
+    }
+  });
+  useEffect(() => {
+    // State is only set once the fetches resolve, not synchronously.
+    // eslint-disable-next-line react/set-state-in-effect
+    if (onSetup) void refreshSets();
+  }, [onSetup]);
+  const isEmptySet = (id: string | null) => sets.find((s) => s.id === id)?.emotes.totalCount === 0;
+  const nothingToPrank = theme === "aprilfools" && isEmptySet(sourceId) && isEmptySet(targetId);
+
   // ---- Searching ----
   const runSearch = useCallback(
     (row: SetEmote, opts?: Partial<SearchOptions>): Promise<SearchState> => {
@@ -592,6 +636,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       const editable = await api.fetchSetInfos(user.editableEmoteSetIds, t);
       if (superseded()) return;
       setSets(editable);
+      lastSetsLoad.current = Date.now();
       setAccount("ready");
       if (pendingResume)
         void startMapping(pendingResume, pendingResume, { token: t, me: user, sets: editable });
@@ -621,7 +666,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       setCustomTags(saved.customTags);
       setResume(saved);
     } else {
-      setTheme(themeForDate());
+      setTheme(initialSelection?.theme ?? themeForDate());
       if (initialSelection) {
         setSourceId(initialSelection.sourceId);
         setTargetId(initialSelection.targetId);
@@ -709,6 +754,51 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
     resetSession();
     setResume(null);
     setLoadError(null);
+  };
+
+  // ---- April Fools ----
+  const leavePrankSetup = () => {
+    storage.mapping.set(null);
+    resetSession();
+  };
+  const startPrank = (prank: Prank) => {
+    const s = sessionRef.current;
+    if (!s) return;
+    const next = { ...s, params: { ...s.params, prank } };
+    sessionRef.current = next;
+    setSession(next);
+    setChoices(prankChoices(prank, { ...s, current: targetEntries }));
+  };
+  const shuffleAgain = async () => {
+    const s = sessionRef.current;
+    if (!s?.params.prank) return;
+    const ok = await ask({
+      title: "Shuffle again?",
+      body: "Changes made to individual emotes will be replaced.",
+      confirmLabel: "Shuffle",
+    });
+    if (ok)
+      setChoices((prev) => ({
+        ...prev,
+        ...prankChoices(s.params.prank!, { ...s, current: targetEntries }),
+      }));
+  };
+  const searchAnyEmote = async (query: string) => {
+    const s = sessionRef.current;
+    if (!s) return [];
+    const linkedId = parseEmoteId(query);
+    const found = linkedId
+      ? [await api.fetchEmoteById(linkedId, s.target.id)].filter((e) => e !== null)
+      : (
+          await api.searchEmotes({
+            query,
+            tags: [],
+            exactMatch: false,
+            sortBy: DEFAULT_SORT,
+            targetSetId: s.target.id,
+          })
+        ).items;
+    return found.filter((e) => canAddTo(e, s.target.ownerId));
   };
 
   /** Default search for an emote: its unaliased name, exact match, seasonal tags. Runs once per emote. */
@@ -1015,15 +1105,20 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       setApplying(true);
       setRunLeft(estimate);
       const gap = changeDelay(requestCount);
-      // Time left: the expected time per request, or the pace so far if 7TV is slower than that (a slow API, or a
-      // rate-limit pause). The first requests go out in a quick burst, so the expected pace is a floor.
-      const started = Date.now();
+      // Time left: the expected time per request, or the pace of the last few requests if 7TV is slower than that
+      // (a slow API, or a rate-limit pause). Recent rather than overall, so a slowdown late in a long save shows up
+      // promptly. The first requests go out in a quick burst, so the expected pace is a floor.
       const expectedPerRequest = estimate / Math.max(1, requestCount);
+      const progress: { at: number; done: number }[] = [{ at: Date.now(), done: 0 }];
       let requestsDone = 0;
       const progressed = (requests: number) => {
         requestsDone += requests;
-        const pace = Math.max(expectedPerRequest, (Date.now() - started) / requestsDone);
-        setRunLeft(pace * Math.max(0, requestCount - requestsDone));
+        progress.push({ at: Date.now(), done: requestsDone });
+        while (progress.length > 2 && requestsDone - progress[1].done >= RECENT_REQUESTS)
+          progress.shift();
+        const from = progress[0];
+        const recent = (Date.now() - from.at) / (requestsDone - from.done);
+        setRunLeft(Math.max(expectedPerRequest, recent) * Math.max(0, requestCount - requestsDone));
       };
       setRun([...toRemove, ...toAdd, ...toSwap].map((r) => r.alias));
       setApplyStates((prev) => {
@@ -1069,7 +1164,9 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         const emote = finalEmote(row)!;
         // A name left empty by an interrupted swap keeps the zero-width setting the target had.
         const interrupted = removedRef.current[row.alias];
-        const zeroWidth = interrupted?.zeroWidth ?? row.flags.zeroWidth;
+        const zeroWidth =
+          interrupted?.zeroWidth ??
+          (s.params.prank ? emote.flags.defaultZeroWidth : row.flags.zeroWidth);
         setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "running" } }));
         try {
           await api.addEmoteToSet(token, s.target.id, emote.id, aliasFor(row, emote), zeroWidth);
@@ -1104,17 +1201,13 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           progressed(2);
           continue;
         }
+        // Pranked names take on the new emote's own zero-width setting, so overlays stay overlays.
+        const zeroWidth = s.params.prank ? emote.flags.defaultZeroWidth : cur.flags.zeroWidth;
         try {
-          await api.addEmoteToSet(
-            token,
-            s.target.id,
-            emote.id,
-            aliasFor(row, emote),
-            cur.flags.zeroWidth,
-          );
+          await api.addEmoteToSet(token, s.target.id, emote.id, aliasFor(row, emote), zeroWidth);
           swapped++;
           journal(s, row.alias, null);
-          setTargetEntry(row.alias, { ...cur, id: emote.id, emote });
+          setTargetEntry(row.alias, { ...cur, id: emote.id, flags: { zeroWidth }, emote });
           setChoices((prev) => ({ ...prev, [row.alias]: KEEP }));
           setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "updated" } }));
         } catch (e) {
@@ -1158,6 +1251,13 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         .filter(Boolean)
         .join(", ");
       if (failed || stale.length) setFilter("errors");
+      // The mapping continues (a full save ends it), so a prank is now partly saved and can't be re-shuffled.
+      const ends = !full && !fatal && !failed && !stale.length;
+      if (!ends && s.params.prank && !s.params.prank.saved && added + swapped + removedN > 0) {
+        const next = { ...s, params: { ...s.params, prank: { ...s.params.prank, saved: true } } };
+        sessionRef.current = next;
+        setSession(next);
+      }
       if (full) {
         await saveStep({
           title: `${s.target.name} is full`,
@@ -1205,8 +1305,6 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       dismissable: false,
     });
     resetSession();
-    // The set picker's emote counts are now out of date; refresh them in the background.
-    if (me) api.fetchSetInfos(me.editableEmoteSetIds, token).then(setSets, () => {});
   };
 
   // ---- Render ----
@@ -1474,6 +1572,16 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
           </section>
         ) : !me ? (
           <LoadingCard message="Signing you in…" />
+        ) : session && session.params.theme === "aprilfools" && !session.params.prank ? (
+          <PrankSetup
+            targetName={session.target.name}
+            pendingCount={session.pending.length}
+            mappedCount={session.mapped.length}
+            extrasCount={session.extras.length}
+            search={searchAnyEmote}
+            onBack={leavePrankSetup}
+            onDone={startPrank}
+          />
         ) : session ? (
           <>
             <section className="card toolbar" aria-label="Your progress">
@@ -1483,11 +1591,13 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                   <b>{session.target.name}</b>
                 </div>
                 <div className="muted small">
-                  Looking for emotes tagged {session.tags.join(" or ")}
+                  {session.params.prank
+                    ? prankSummary(session.params.prank)
+                    : `Looking for emotes tagged ${session.tags.join(" or ")}`}
                 </div>
                 <div className="stats">
                   <span>
-                    <b>{stats.replace}</b> seasonal
+                    <b>{stats.replace}</b> {session.params.prank ? "pranked" : "seasonal"}
                   </span>
                   <span>
                     <b>{stats.original}</b> as-is
@@ -1527,6 +1637,15 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                     applyLabel
                   )}
                 </Button>
+                {session.params.prank?.kind === "shuffle" && (
+                  <Button
+                    className="btn"
+                    isDisabled={applying || session.params.prank.saved}
+                    onPress={shuffleAgain}
+                  >
+                    Shuffle again
+                  </Button>
+                )}
                 <Button className="btn ghost-danger" isDisabled={applying} onPress={cancelMapping}>
                   Start over
                 </Button>
@@ -1721,7 +1840,9 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                 </div>
                 {theme !== "custom" && (
                   <Text slot="description" className="muted small">
-                    Search for emotes tagged {tags.join(" or ")}
+                    {theme === "aprilfools"
+                      ? "Replace emotes as a prank. The prank is chosen in the next step."
+                      : `Search for emotes tagged ${tags.join(" or ")}`}
                   </Text>
                 )}
               </RadioGroup>
@@ -1735,7 +1856,13 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
             <div className="actions">
               <Button
                 className="btn primary"
-                isDisabled={!sourceId || !targetId || sourceId === targetId || !tags.length}
+                isDisabled={
+                  !sourceId ||
+                  !targetId ||
+                  sourceId === targetId ||
+                  (theme === "custom" && !tags.length) ||
+                  nothingToPrank
+                }
                 isPending={loading}
                 onPress={() =>
                   sourceId &&
@@ -1746,7 +1873,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
                 {({ isPending }) => (
                   <>
                     {isPending && <Spinner label="Loading your sets" size="sm" />}
-                    Start picking
+                    {theme === "aprilfools" ? "Next" : "Start picking"}
                   </>
                 )}
               </Button>
@@ -1756,6 +1883,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
               {theme === "custom" && !tags.length && (
                 <span className="muted small">Add at least one tag.</span>
               )}
+              {nothingToPrank && <span className="muted small">Both sets are empty.</span>}
               {loadError && <span className="error small">{loadError}</span>}
               {sets.length === 0 && (
                 <span className="muted small">

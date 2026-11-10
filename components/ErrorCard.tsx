@@ -5,13 +5,14 @@ import { Button } from "react-aria-components";
 import { Link } from "@/components/Link";
 import { THEMES, type Theme, loadMapping, themeForDate } from "@/lib/mapping";
 
-function savedTheme(): Theme | null {
-  if (location.pathname.startsWith("/demo")) return null;
+// Same choice as the inline <head> script in app/layout.tsx.
+function startupTheme(): Theme {
+  if (location.pathname.startsWith("/demo")) return "halloween";
   try {
-    return loadMapping()?.theme ?? null;
+    return loadMapping()?.theme ?? themeForDate();
   } catch {
     // Reading the saved mapping may be what failed; the date's theme still works.
-    return null;
+    return themeForDate();
   }
 }
 
@@ -35,7 +36,7 @@ export function ErrorCard({ onRetry }: { onRetry: () => void }) {
   // When the error happens while hydrating, React re-renders <html> and drops the palette the inline <head> script
   // set, and the app isn't there to set it again. global-error has no such script at all. Set before the first paint.
   useLayoutEffect(() => {
-    document.documentElement.dataset.theme = THEMES[savedTheme() ?? themeForDate()].palette;
+    document.documentElement.dataset.theme = THEMES[startupTheme()].palette;
   }, []);
   const [unsupported] = useState(() => !isSupportedBrowser());
 

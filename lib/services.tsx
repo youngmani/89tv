@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
-import { type MappingRecord, clearMapping, loadMapping, saveMapping } from "./mapping";
+import { type MappingRecord, type Theme, clearMapping, loadMapping, saveMapping } from "./mapping";
 import * as seventv from "./seventv";
 import { load, save } from "./storage";
 
@@ -35,8 +35,8 @@ export interface Services {
     token: Slot<string>;
     mapping: Slot<MappingRecord>;
   };
-  /** Sets to pre-select on the setup form when there's no in-progress mapping. */
-  initialSelection?: { sourceId: string; targetId: string };
+  /** Sets (and a theme, instead of the date's) to pre-select on the setup form when there's no in-progress mapping. */
+  initialSelection?: { sourceId: string; targetId: string; theme?: Theme };
   /** How long to pause after each add or remove while saving `total` of them. */
   changeDelay: (total: number) => number;
   /** Roughly how long saving `total` adds/removes takes, in ms. */

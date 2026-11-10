@@ -2,12 +2,13 @@ export function SiteHeader({ children }: { children?: React.ReactNode }) {
   return (
     <header className="top">
       <h1>
-        {/* All three are rendered and CSS picks one from <html data-theme>, which an inline script sets before
+        {/* All of them are rendered and CSS picks one from <html data-theme>, which an inline script sets before
             first paint, so the logo is right even before hydration. */}
         <span className="logo" aria-hidden>
           <span className="logo-halloween">🎃</span>
           <span className="logo-winter">❄️</span>
           <span className="logo-neutral">✨</span>
+          <span className="logo-aprilfools">🤡</span>
         </span>{" "}
         {/* Styled like the favicon: the 9 in the accent colour, tucked into the 8. Reads as "89TV". */}
         <span className="wordmark">

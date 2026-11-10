@@ -36,10 +36,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" data-theme="neutral" className={nunito.variable} suppressHydrationWarning>
       <head>
-        {/* Pick the palette before first paint (no flash): the in-progress mapping's theme if there is one
-            (not on /demo, which doesn't use saved data and would otherwise flash), otherwise the season. Keep
-            in sync with themeForDate() in lib/mapping.ts. React 19 doesn't escape script children. */}
-        <script>{`try{var saved=location.pathname.indexOf("/demo")===0?null:JSON.parse(localStorage.getItem("89tv:mapping")||"null"),theme=saved&&saved.theme;if(!theme){var d=new Date(),m=d.getMonth();theme=m===8||m===9?"halloween":m>=10||(m===0&&d.getDate()<=7)?"christmas":"custom"}document.documentElement.dataset.theme=theme==="christmas"?"winter":theme==="custom"?"neutral":"halloween"}catch(e){}`}</script>
+        {/* Pick the palette before first paint (no flash): Halloween on /demo (its pre-selected set, see
+            lib/demo.ts; it ignores saved data), else the in-progress mapping's theme if there is one, else the
+            season. Keep in sync with themeForDate() in lib/mapping.ts. React 19 doesn't escape script children. */}
+        <script>{`try{var demo=location.pathname.indexOf("/demo")===0,saved=demo?null:JSON.parse(localStorage.getItem("89tv:mapping")||"null"),theme=demo?"halloween":saved&&saved.theme;if(!theme){var d=new Date(),m=d.getMonth();theme=m===2||(m===3&&d.getDate()<=2)?"aprilfools":m===8||m===9?"halloween":m>=10||(m===0&&d.getDate()<=7)?"christmas":"custom"}document.documentElement.dataset.theme=theme==="christmas"?"winter":theme==="custom"?"neutral":theme==="aprilfools"?"aprilfools":"halloween"}catch(e){}`}</script>
         {/* Open connections early so the first API call and emote images skip DNS/TLS setup (~0.5s). The
             API is called with fetch (CORS), hence crossOrigin; images are plain requests. */}
         <link rel="preconnect" href="https://api.7tv.app" crossOrigin="anonymous" />
