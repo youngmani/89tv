@@ -11,7 +11,7 @@ export const viewport: Viewport = { colorScheme: "dark" };
 
 const description = "Make Halloween and Christmas versions of your 7TV emote set.";
 /** Every title ends with the words people search for: "89TV · …" at home, "Demo · 89TV · …" on other pages. */
-const tagline = "Halloween and Christmas 7TV emote sets";
+const tagline = "Halloween and Christmas 7TV emote set generator";
 const title = `89TV · ${tagline}`;
 
 // Social previews (Open Graph, X/Twitter) use app/opengraph-image.png; Next adds its tags and absolute URL.
