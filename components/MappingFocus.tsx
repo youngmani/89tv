@@ -192,8 +192,15 @@ export function MappingFocus({
   // so the header stays "base → new".
   const replacing = o.kind === "swap" ? o.current : undefined;
   const keepsCurrent = o.kind === "keep";
+  const showPrevious = !!previous;
+  const showBase = inBase && (!mapped || current?.id !== source.emote.id);
+  const showCurrent = mapped && !!current;
+  const showChosen = !!chosen && chosenMissing;
   // Each tile's position in the grid (pinned tiles first, then results), so the loading pulse ripples across all.
-  let tileIndex = 0;
+  const baseIndex = Number(showPrevious);
+  const currentIndex = baseIndex + Number(showBase);
+  const chosenIndex = currentIndex + Number(showCurrent);
+  const firstResultIndex = chosenIndex + Number(showChosen);
 
   return (
     <section className="card focus" aria-label={`Picking for ${source.alias}`}>
@@ -317,18 +324,18 @@ export function MappingFocus({
       <div className={`tiles-area${loading ? " loading" : ""}`}>
         {loading && <Spinner label="Searching" className="spinner" />}
         <div className="tiles">
-          {previous && (
+          {showPrevious && previous && (
             <Tile
               emote={previous.emote}
               selected={chosen?.id === previous.emote.id}
               onSelect={() => onChoose({ kind: "replace", emote: previous.emote }, true)}
               badge="previous"
               note="removed by an interrupted save"
-              index={tileIndex++}
+              index={0}
             />
           )}
           {/* Base before current, in the same order as the header's "base → current". */}
-          {inBase && (!mapped || current?.id !== source.emote.id) && (
+          {showBase && (
             <Tile
               emote={source.emote}
               selected={choice.kind === "original" && !keepsCurrent}
@@ -336,10 +343,10 @@ export function MappingFocus({
               badge="base"
               zeroWidth={source.flags.zeroWidth}
               hotkey={mapped ? undefined : "0"}
-              index={tileIndex++}
+              index={baseIndex}
             />
           )}
-          {mapped && current && (
+          {showCurrent && current && (
             <Tile
               emote={current}
               selected={keepsCurrent}
@@ -347,16 +354,16 @@ export function MappingFocus({
               badge={current.deleted ? "current (deleted)" : "current"}
               zeroWidth={inTarget?.flags.zeroWidth}
               hotkey="0"
-              index={tileIndex++}
+              index={currentIndex}
             />
           )}
-          {chosen && chosenMissing && (
+          {showChosen && chosen && (
             <Tile
               emote={chosen}
               selected
               onSelect={() => onChoose(choice, true)}
               badge="chosen"
-              index={tileIndex++}
+              index={chosenIndex}
             />
           )}
           {items.map((e, i) => (
@@ -367,7 +374,7 @@ export function MappingFocus({
               onSelect={() => onChoose({ kind: "replace", emote: e }, true)}
               isDisabled={loading}
               hotkey={i < 9 ? String(i + 1) : undefined}
-              index={tileIndex++}
+              index={firstResultIndex + i}
               note={
                 e.inTarget.length ? `in your seasonal set as ${e.inTarget.join(", ")}` : undefined
               }

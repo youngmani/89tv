@@ -93,8 +93,46 @@ const prankSummary = (prank: Prank) =>
     ? `April Fools: every ${prank.existing === "keep" ? "new " : ""}emote shows ${prank.emote.defaultName}`
     : `April Fools: ${prank.existing === "keep" ? "new" : "all"} emotes shuffled`;
 
+interface SaveProblems {
+  failed: number;
+  /** The set ran out of room. */
+  full: boolean;
+  /** Why the save stopped early, if it did. */
+  fatal: string | null;
+}
+
+/** Counts a failed change, and returns whether the save should stop. */
+function recordFailure(problems: SaveProblems, e: unknown, message: string) {
+  problems.failed++;
+  if (isCapacityError(e)) problems.full = true;
+  // Problems with one emote (name clash, private, gone) don't stop the run; anything about the set,
+  // the session or the network would fail every remaining change too, so stop and report it.
+  else if (!isEmoteLevelError(e)) problems.fatal = message;
+  return problems.full || !!problems.fatal;
+}
+
 /** How many of the latest requests the save's time-left estimate is based on. */
 const RECENT_REQUESTS = 60;
+
+/**
+ * Time left on a save, after each batch of finished requests: the expected time per request, or the pace of the
+ * latest requests if 7TV is slower than that (a slow API, or a rate-limit pause). Recent rather than overall, so a
+ * slowdown late in a long save shows up promptly. The first requests go out in a quick burst, so the expected pace
+ * is a floor.
+ */
+function trackTimeLeft(total: number, estimate: number) {
+  const expectedPerRequest = estimate / Math.max(1, total);
+  const progress = [{ at: Date.now(), done: 0 }];
+  let done = 0;
+  return (requests: number) => {
+    done += requests;
+    progress.push({ at: Date.now(), done });
+    while (progress.length > 2 && done - progress[1].done >= RECENT_REQUESTS) progress.shift();
+    const from = progress[0];
+    const recent = (Date.now() - from.at) / (done - from.done);
+    return Math.max(expectedPerRequest, recent) * Math.max(0, total - done);
+  };
+}
 
 /** How long "Start picking" waits for the first card before showing it anyway. */
 const FIRST_CARD_BUDGET_MS = 1000;
@@ -1105,21 +1143,8 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       setApplying(true);
       setRunLeft(estimate);
       const gap = changeDelay(requestCount);
-      // Time left: the expected time per request, or the pace of the last few requests if 7TV is slower than that
-      // (a slow API, or a rate-limit pause). Recent rather than overall, so a slowdown late in a long save shows up
-      // promptly. The first requests go out in a quick burst, so the expected pace is a floor.
-      const expectedPerRequest = estimate / Math.max(1, requestCount);
-      const progress: { at: number; done: number }[] = [{ at: Date.now(), done: 0 }];
-      let requestsDone = 0;
-      const progressed = (requests: number) => {
-        requestsDone += requests;
-        progress.push({ at: Date.now(), done: requestsDone });
-        while (progress.length > 2 && requestsDone - progress[1].done >= RECENT_REQUESTS)
-          progress.shift();
-        const from = progress[0];
-        const recent = (Date.now() - from.at) / (requestsDone - from.done);
-        setRunLeft(Math.max(expectedPerRequest, recent) * Math.max(0, requestCount - requestsDone));
-      };
+      const timeLeftAfter = trackTimeLeft(requestCount, estimate);
+      const progressed = (requests: number) => setRunLeft(timeLeftAfter(requests));
       setRun([...toRemove, ...toAdd, ...toSwap].map((r) => r.alias));
       setApplyStates((prev) => {
         const next = { ...prev };
@@ -1129,18 +1154,11 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       let added = 0;
       let swapped = 0;
       let removedN = 0;
-      let failed = 0;
-      let full = false;
-      let fatal: string | null = null;
+      const problems: SaveProblems = { failed: 0, full: false, fatal: null };
       const fail = (row: SetEmote, e: unknown, suffix = "") => {
-        failed++;
         const message = friendlyError(e) + suffix;
         setApplyStates((prev) => ({ ...prev, [row.alias]: { state: "error", message } }));
-        if (isCapacityError(e)) full = true;
-        // Problems with one emote (name clash, private, gone) don't stop the run; anything about the set,
-        // the session or the network would fail every remaining change too, so stop and report it.
-        else if (!isEmoteLevelError(e)) fatal = message;
-        return full || !!fatal;
+        return recordFailure(problems, e, message);
       };
 
       // Removals first: they free slots for the adds that follow.
@@ -1159,7 +1177,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
         await sleep(gap);
       }
 
-      for (const row of full || fatal ? [] : toAdd) {
+      for (const row of problems.full || problems.fatal ? [] : toAdd) {
         if (sessionRef.current !== s) break;
         const emote = finalEmote(row)!;
         // A name left empty by an interrupted swap keeps the zero-width setting the target had.
@@ -1187,7 +1205,7 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       }
 
       // Swaps: remove the current entry, add the new emote under the same name, and roll back on failure.
-      for (const row of full || fatal ? [] : toSwap) {
+      for (const row of problems.full || problems.fatal ? [] : toSwap) {
         if (sessionRef.current !== s) break;
         const cur = targetEntries[row.alias];
         const emote = finalEmote(row)!;
@@ -1250,32 +1268,32 @@ export function App({ headerAction }: { headerAction?: React.ReactNode }) {
       ]
         .filter(Boolean)
         .join(", ");
-      if (failed || stale.length) setFilter("errors");
+      if (problems.failed || stale.length) setFilter("errors");
       // The mapping continues (a full save ends it), so a prank is now partly saved and can't be re-shuffled.
-      const ends = !full && !fatal && !failed && !stale.length;
+      const ends = !problems.full && !problems.fatal && !problems.failed && !stale.length;
       if (!ends && s.params.prank && !s.params.prank.saved && added + swapped + removedN > 0) {
         const next = { ...s, params: { ...s.params, prank: { ...s.params.prank, saved: true } } };
         sessionRef.current = next;
         setSession(next);
       }
-      if (full) {
+      if (problems.full) {
         await saveStep({
           title: `${s.target.name} is full`,
           body: `${s.target.name} ran out of room after ${done}. Remove some emotes from it, then save again.`,
         });
-      } else if (fatal) {
+      } else if (problems.fatal) {
         await saveStep({
           title: "Stopped early",
           body: (
             <>
-              <ErrorText message={fatal} /> {done} before the save stopped. Your selections are
-              saved. Resolve the issue, then save again.
+              <ErrorText message={problems.fatal} /> {done} before the save stopped. Your selections
+              are saved. Resolve the issue, then save again.
             </>
           ),
         });
-      } else if (failed || stale.length) {
+      } else if (problems.failed || stale.length) {
         await saveStep({
-          title: `${plural(failed + stale.length, "emote")} failed`,
+          title: `${plural(problems.failed + stale.length, "emote")} failed`,
           body: `${done}. Failed emotes are listed at the top with the reason for each. Resolve them, then save again.`,
         });
       } else {
